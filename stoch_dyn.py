@@ -134,10 +134,14 @@ class PathIntegralOptimizer:
         # Get summary statistics
         mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
         std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
-        best_action = idata.log_likelihood['action'].mean().values.item()
-        action_values = -self.trace.log_likelihood['action'].values * self.hbar
-        action_mean = float(action_values.mean())
-        action_std = float(action_values.std())
+        # Calculate action values from posterior samples
+        x_path_samples = idata.posterior.x_path.values
+        action_values = np.array([self.compute_action(pt.as_tensor(x)).eval() 
+                                for x in x_path_samples.reshape(-1, self.T)])
+        
+        best_action = float(np.min(action_values))
+        action_mean = float(np.mean(action_values))
+        action_std = float(np.std(action_values))
 
         logger.info("=== MCMC Summary ===")
         logger.info(f"Number of samples: {len(self.mcmc_paths)}")
