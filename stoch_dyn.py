@@ -8,7 +8,7 @@ import arviz as az
 
 class PathIntegralOptimizer:
     """A class for performing path integral optimization using Markov Chain Monte Carlo (MCMC)."""
-    def __init__(self, a: float, b: float, c: float, S: float, T: int, hbar: float, num_steps: int, burn_in: int, seed: int = 42) -> None:
+    def __init__(self, a: float, b: float, c: float, S: float, T: int, hbar: float, num_steps: int, burn_in: int, proposal_stddev: float, seed: int = 42) -> None:
         """Initializes the PathIntegralOptimizer.
 
         Args:
