@@ -173,12 +173,23 @@ class PathIntegralOptimizer:
             # Get summary statistics
             mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
             std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
-            # Calculate action values from posterior samples
-            x_path_samples = idata.posterior.x_path.values
-            action_values = np.array([self.compute_action(pt.as_tensor(x)).eval() 
-                                    for x in x_path_samples.reshape(-1, self.T)])
-            
-            best_action = float(np.min(action_values))
+            # Calculate action values from posterior samples using the NumPy version
+            x_path_samples = idata.posterior.x_path.values.reshape(-1, self.T)
+            action_values = np.array([self._compute_action_numpy(x) for x in x_path_samples])
+
+            # Filter out potential non-finite values before finding min/mean/std
+            finite_action_values = action_values[np.isfinite(action_values)]
+            if len(finite_action_values) == 0:
+                logger.warning("No finite action values found in the posterior samples.")
+                best_action = np.nan
+                action_mean = np.nan
+                action_std = np.nan
+            else:
+                best_action = float(np.min(finite_action_values))
+                action_mean = float(np.mean(finite_action_values))
+                action_std = float(np.std(finite_action_values))
+
+            logger.info("=== MCMC Summary ===")
             logger.info(f"Number of samples: {len(x_path_samples)} (Finite actions: {len(finite_action_values)})")
             logger.info(f"Parameters: a={self.a}, b={self.b}, c={self.c}, S={self.S}, T={self.T}, hbar={self.hbar}")
             logger.info(f"Best path action: {best_action:.4f}")
