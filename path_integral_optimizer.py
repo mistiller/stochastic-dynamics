@@ -123,8 +123,12 @@ class PathIntegralOptimizer:
                     return_inferencedata=True)
                 
             logger.info("MCMC sampling finished. Storing samples.")
-            self.mcmc_paths = self.trace.posterior.x_path.values.reshape(-1, self.T).tolist()
-            self.actions = [-self.trace.log_likelihood['action'].values.mean(axis=1)]
+            # Reshape samples: (chains, draws, T) -> (chains*draws, T)
+            x_path_samples = self.trace.posterior.x_path.values.reshape(-1, self.T)
+            self.mcmc_paths = x_path_samples.tolist() # Store as list of arrays
+            # Compute action for each sampled path using the numpy helper
+            self.actions = [self._compute_action_numpy(path) for path in x_path_samples]
+            logger.info(f"Computed actions for {len(self.actions)} paths.")
         except Exception as e:
             logger.exception(f"Error in run_mcmc: {e}")
             raise
