@@ -1,5 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import List # Added for type hinting
+import numpy as np
+import matplotlib.pyplot as plt
 import pymc as pm
 from pytensor import tensor as pt
 from loguru import logger
@@ -65,6 +68,31 @@ class PathIntegralOptimizer:
         except Exception as e:
             logger.exception(f"Error in compute_action: {e}")
             raise
+
+    def _compute_action_numpy(self, x_path: np.ndarray) -> float:
+        """Computes the action for a given path using NumPy.
+
+        Args:
+            x_path (np.ndarray): The allocation path array.
+
+        Returns:
+            float: The action value.
+        """
+        try:
+            t = np.arange(1, self.T + 1)
+            x_safe = x_path + 1e-9  # Add small epsilon for numerical stability
+            benefit = self.a * x_safe ** self.b
+            cost = self.c * x_safe ** (2 + 0.1 * t)
+            action = -np.sum(benefit - cost)
+            if not np.isfinite(action):
+                 logger.warning(f"Non-finite action computed for path: {x_path}. Action: {action}")
+                 # Handle non-finite actions, e.g., return a large penalty or skip
+                 return np.inf # Or some large finite number
+            return float(action)
+        except Exception as e:
+            logger.exception(f"Error in _compute_action_numpy: {e}")
+            raise
+
 
     def run_mcmc(self) -> None:
         """Runs the Hamiltonian Monte Carlo (HMC) simulation using PyTensor/PyMC.
@@ -151,11 +179,7 @@ class PathIntegralOptimizer:
                                     for x in x_path_samples.reshape(-1, self.T)])
             
             best_action = float(np.min(action_values))
-            action_mean = float(np.mean(action_values))
-            action_std = float(np.std(action_values))
-
-            logger.info("=== MCMC Summary ===")
-            logger.info(f"Number of samples: {len(self.mcmc_paths)}")
+            logger.info(f"Number of samples: {len(x_path_samples)} (Finite actions: {len(finite_action_values)})")
             logger.info(f"Parameters: a={self.a}, b={self.b}, c={self.c}, S={self.S}, T={self.T}, hbar={self.hbar}")
             logger.info(f"Best path action: {best_action:.4f}")
             logger.info(f"Mean action: {action_mean:.4f} ± {action_std:.4f}")
