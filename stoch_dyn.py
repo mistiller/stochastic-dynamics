@@ -8,7 +8,7 @@ import arviz as az
 
 class PathIntegralOptimizer:
     """A class for performing path integral optimization using Markov Chain Monte Carlo (MCMC)."""
-    def __init__(self, a: float, b: float, c: float, S: float, T: int, hbar: float, num_steps: int, burn_in: int, proposal_stddev: float, seed: int = 42) -> None:
+    def __init__(self, a: float, b: float, c: float, S: float, T: int, hbar: float, num_steps: int, burn_in: int, seed: int = 42) -> None:
         """Initializes the PathIntegralOptimizer.
 
         Args:
@@ -139,6 +139,9 @@ class PathIntegralOptimizer:
         mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
         std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
         best_action = idata.log_likelihood['action'].mean().values.item()
+        action_values = -self.trace.log_likelihood['action'].values * self.hbar
+        action_mean = float(action_values.mean())
+        action_std = float(action_values.std())
 
         logger.info("=== MCMC Summary ===")
         logger.info(f"Number of samples: {len(self.mcmc_paths)}")
@@ -168,7 +171,7 @@ def main() -> None:
     burn_in: int = 1000    # Tuning steps per chain
 
     try:
-        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
+        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in)
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
         optimizer.generate_summary()
