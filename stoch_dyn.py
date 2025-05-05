@@ -157,14 +157,14 @@ def main() -> None:
     logger.info("Starting the stochastic dynamics application")
 
     # Parameters
-    a: float = 10
+    a: float = 1.0  # Reduced for numerical stability
     b: float = 0.5
-    c: float = 2
-    S: float = 50
-    T: int = 12
-    hbar: float = 0.1  # Temperature parameter
-    num_steps: int = 2000  # Total MCMC samples per chain
-    burn_in: int = 1000    # Tuning steps per chain
+    c: float = 0.5  # Reduced for numerical stability
+    S: float = 10    # Reduced for numerical stability
+    T: int = 5       # Reduced for numerical stability
+    hbar: float = 0.1
+    num_steps: int = 1000  # Reduced for testing
+    burn_in: int = 500     # Reduced for testing
     proposal_stddev: float = 0.5  # Standard deviation for proposal distribution
 
     try:
