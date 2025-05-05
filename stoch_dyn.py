@@ -169,9 +169,10 @@ def main() -> None:
     hbar: float = 0.1  # Temperature parameter
     num_steps: int = 2000  # Total MCMC samples per chain
     burn_in: int = 1000    # Tuning steps per chain
+    proposal_stddev: float = 0.5  # Standard deviation for proposal distribution
 
     try:
-        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in)
+        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
         optimizer.generate_summary()
