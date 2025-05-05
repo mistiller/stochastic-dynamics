@@ -1,0 +1,37 @@
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+_build/
+dist/
+downloads/
+*.egg
+.eggs/
+sdist/
+wheel/
+*.whl
+*.egg-info/
+.env
+venv/
+
+# PyInstaller
+#  Usually these files are written into a dist/ directory.
+#  Assuming it is the top-level directory, leave dist/ here.
+# /dist/
+# build/
+
+# Others
+*.log
+*.bak
+*~
+*.swp
+[Ee]rrlog.txt
+[Ll]og.txt
+
+# OS generated files
+.DS_Store
+Thumbs.db
