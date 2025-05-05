@@ -64,7 +64,7 @@ class PathIntegralOptimizer:
             x_safe = x_path + 1e-9
             benefit = self.a * x_safe ** self.b
             cost = self.c * x_safe ** (2 + 0.1 * t)  # Vectorized d(t) implementation
-            return -np.sum(benefit - cost)
+            return -pt.sum(benefit - cost)
         except Exception as e:
             logger.exception(f"Error in compute_action: {e}")
             raise
