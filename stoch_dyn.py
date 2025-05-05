@@ -1,9 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import norm
-import copy
+import pytensor.tensor as pt
+import pymc as pm
 from loguru import logger
-from typing import List
+from typing import List, Dict, Any
+import arviz as az
 
 class PathIntegralOptimizer:
     """A class for performing path integral optimization using Markov Chain Monte Carlo (MCMC)."""
@@ -47,85 +48,56 @@ class PathIntegralOptimizer:
         """
         return 2 + 0.1 * t
 
-    def compute_action(self, x_path: np.ndarray) -> float:
-        """Computes the action for a given path.
+    def compute_action(self, x_path: pt.TensorVariable) -> pt.TensorVariable:
+        """Computes the action for a given path using PyTensor.
 
         Args:
-            x_path (np.ndarray): The allocation path.
+            x_path (pt.TensorVariable): The allocation path tensor.
 
         Returns:
-            float: The action value.
+            pt.TensorVariable: The action value tensor.
         """
-        total: float = 0
-        for t, x in enumerate(x_path, 1):
-            x_safe: float = x + 1e-9
-            benefit: float = self.a * x_safe**self.b
-            cost: float = self.c * x_safe**self.d(t)
-            total += benefit - cost
-        return -total
+        t = pt.arange(1, self.T + 1)
+        x_safe = x_path + 1e-9
+        benefit = self.a * x_safe ** self.b
+        cost = self.c * x_safe ** (2 + 0.1 * t)  # Vectorized d(t) implementation
+        return -pt.sum(benefit - cost)
 
     def run_mcmc(self) -> None:
-        """Runs the Markov Chain Monte Carlo (MCMC) simulation.
+        """Runs the Hamiltonian Monte Carlo (HMC) simulation using PyTensor/PyMC.
 
-        This method generates samples of allocation paths according to the Metropolis algorithm.
+        This method uses NUTS sampling for more efficient exploration of the parameter space.
         """
-        logger.info("Starting MCMC sampling...")
-        # Initial path (e.g., uniform allocation)
-        current_path: np.ndarray = np.full(self.T, self.S / self.T)
-        current_action: float = self.compute_action(current_path)
-
-        for step in range(self.num_steps):
-            # Propose a new path by transferring resources between two random time points
-            proposed_path: np.ndarray = copy.deepcopy(current_path)
-
-            # Choose two distinct time points
-            t1, t2 = np.random.choice(self.T, 2, replace=False)
-
-            # Propose amount to transfer (can be positive or negative)
-            # Ensure delta is small enough not to violate non-negativity constraints easily
-            max_transfer_from_t1: float = proposed_path[t1]
-            transfer_amount: float = norm.rvs(loc=0, scale=self.proposal_stddev)
-
-            # Ensure non-negativity after transfer
-            # Cap the transfer amount if it makes x[t1] negative
-            transfer_amount: float = max(transfer_amount, -max_transfer_from_t1 + 1e-9) # Add epsilon for safety
-
-            # Perform transfer
-            proposed_path[t1] -= transfer_amount
-            proposed_path[t2] += transfer_amount
-
-            # Check constraints: non-negativity and total sum S
-            # Non-negativity at t2
-            if proposed_path[t2] < 0:
-                # Reject proposal if t2 becomes negative
-                # (Could also reflect the transfer amount, but rejection is simpler)
-                pass # Keep current_path
-            else:
-                # Calculate action for the proposed path
-                proposed_action: float = self.compute_action(proposed_path)
-
-                # Acceptance probability (Metropolis criterion)
-                acceptance_prob: float = min(1, np.exp(-(proposed_action - current_action) / self.hbar))
-
-                # Accept or reject the proposal
-                if np.random.rand() < acceptance_prob:
-                    current_path = proposed_path
-                    current_action = proposed_action
-
-            # Store path after burn-in period
-            if step >= self.burn_in:
-                self.mcmc_paths.append(copy.deepcopy(current_path))
-                self.actions.append(current_action)
-
-            if (step + 1) % 5000 == 0:
-                logger.info(f"MCMC Step {step+1}/{self.num_steps}")
-
-        logger.info(f"MCMC sampling finished. Collected {len(self.mcmc_paths)} samples after burn-in.")
-
-        # Ensure we have samples
-        if not self.mcmc_paths:
-            logger.error("Error: No paths collected after burn-in. Increase num_steps or decrease burn_in.")
-            exit()
+        logger.info("Starting PyTensor/PyMC MCMC sampling...")
+        
+        with pm.Model() as model:
+            # Define constrained allocation path
+            x_path = pm.Uniform("x_path", 
+                              lower=0, 
+                              upper=self.S,
+                              shape=self.T,
+                              transform=pm.distributions.transforms.simplex)
+            
+            # Enforce sum constraint using potential
+            pm.Potential("sum_constraint", pt.switch(
+                pt.isclose(pt.sum(x_path), self.S), 0, -np.inf))
+            
+            # Define action as negative log likelihood
+            action = self.compute_action(x_path)
+            pm.Potential("action", -action / self.hbar)  # Convert action to log-likelihood
+            
+            # Run NUTS sampler
+            self.trace = pm.sample(
+                draws=self.num_steps,
+                tune=self.burn_in,
+                target_accept=0.9,
+                chains=4,
+                cores=4,
+                return_inferencedata=True)
+            
+        logger.info("MCMC sampling finished. Storing samples.")
+        self.mcmc_paths = self.trace.posterior.x_path.values.reshape(-1, self.T).tolist()
+        self.actions = [-self.trace.log_likelihood['action'].values.mean(axis=1)]
 
     def plot_top_paths(self, num_paths_to_plot: int = 10) -> None:
         """Plots the top N most probable paths.
@@ -155,18 +127,18 @@ class PathIntegralOptimizer:
         plt.show()
 
     def generate_summary(self):
-        """Generates and logs a summary of the MCMC results."""
-        if not self.mcmc_paths:
-            logger.warning("No paths collected. Cannot generate summary.")
+        """Generates and logs a summary of the MCMC results using ArviZ."""
+        if not hasattr(self, 'trace'):
+            logger.warning("No trace collected. Cannot generate summary.")
             return
 
-        mean_path = np.mean(self.mcmc_paths, axis=0)
-        std_path = np.std(self.mcmc_paths, axis=0)
-        best_idx = np.argmin(self.actions)
-        best_path = self.mcmc_paths[best_idx]
-        best_action = self.actions[best_idx]
-        action_mean = np.mean(self.actions)
-        action_std = np.std(self.actions)
+        # Convert to ArviZ InferenceData
+        idata = az.convert_to_inference_data(self.trace)
+        
+        # Get summary statistics
+        mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
+        std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
+        best_action = idata.log_likelihood['action'].mean().values.item()
 
         logger.info("=== MCMC Summary ===")
         logger.info(f"Number of samples: {len(self.mcmc_paths)}")
@@ -191,10 +163,9 @@ def main() -> None:
     c: float = 2
     S: float = 50
     T: int = 12
-    hbar: float = 0.1  # Noise parameter (smaller = less stochasticity)
-    num_steps: int = 50000  # Total MCMC steps
-    burn_in: int = 10000    # Steps to discard for equilibration
-    proposal_stddev: float = 0.5 # Standard deviation for the resource transfer proposal
+    hbar: float = 0.1  # Temperature parameter
+    num_steps: int = 2000  # Total MCMC samples per chain
+    burn_in: int = 1000    # Tuning steps per chain
 
     try:
         optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
