@@ -143,9 +143,9 @@ class PathIntegralOptimizer:
         for i, idx in enumerate(top_indices):
             plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], label=f"Path {i+1} (Action: {self.actions[idx]:.2f})", alpha=0.7)
 
-        # Optional: Plot average path
-        # average_path = np.mean(mcmc_paths, axis=0)
-        # plt.plot(range(1, T + 1), average_path, label="Average Path", color='black', linewidth=2, linestyle='--')
+        # Plot average path
+        average_path = np.mean(self.mcmc_paths, axis=0)
+        plt.plot(range(1, self.T + 1), average_path, label="Average Path", color='black', linewidth=2, linestyle='--')
 
         plt.xlabel("Time (t)")
         plt.ylabel("Allocation (x(t))")
@@ -153,6 +153,31 @@ class PathIntegralOptimizer:
         plt.legend()
         plt.grid(True)
         plt.show()
+
+    def generate_summary(self):
+        """Generates and logs a summary of the MCMC results."""
+        if not self.mcmc_paths:
+            logger.warning("No paths collected. Cannot generate summary.")
+            return
+
+        mean_path = np.mean(self.mcmc_paths, axis=0)
+        std_path = np.std(self.mcmc_paths, axis=0)
+        best_idx = np.argmin(self.actions)
+        best_path = self.mcmc_paths[best_idx]
+        best_action = self.actions[best_idx]
+        action_mean = np.mean(self.actions)
+        action_std = np.std(self.actions)
+
+        logger.info("=== MCMC Summary ===")
+        logger.info(f"Number of samples: {len(self.mcmc_paths)}")
+        logger.info(f"Parameters: a={self.a}, b={self.b}, c={self.c}, S={self.S}, T={self.T}, hbar={self.hbar}")
+        logger.info(f"Best path action: {best_action:.4f}")
+        logger.info(f"Mean action: {action_mean:.4f} ± {action_std:.4f}")
+        logger.info("Mean allocation per time step:")
+        logger.info("Time : Mean ± Std Dev")
+        for t in range(self.T):
+            logger.info(f"{t+1:2d}   : {mean_path[t]:.4f} ± {std_path[t]:.4f}")
+        logger.info("====================")
 
 
 def main() -> None:
@@ -175,6 +200,7 @@ def main() -> None:
         optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
+        optimizer.generate_summary()
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
