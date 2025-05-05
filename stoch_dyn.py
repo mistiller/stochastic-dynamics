@@ -71,20 +71,16 @@ class PathIntegralOptimizer:
         logger.info("Starting PyTensor/PyMC MCMC sampling...")
         
         with pm.Model() as model:
-            # Define constrained allocation path
-            x_path = pm.Uniform("x_path", 
-                              lower=0, 
-                              upper=self.S,
-                              shape=self.T,
-                              transform=pm.distributions.transforms.simplex)
+            # Define constrained allocation path using Dirichlet distribution scaled by S
+            x_path = pm.Dirichlet("x_path", a=np.ones(self.T)) * self.S
             
-            # Enforce sum constraint using potential
-            pm.Potential("sum_constraint", pt.switch(
-                pt.isclose(pt.sum(x_path), self.S), 0, -np.inf))
+            # Enforce non-negative and finite values
+            pm.Potential("non_negative", pt.switch(x_path < 0, -np.inf, 0))
+            pm.Potential("finite_check", pt.switch(pt.isnan(x_path), -np.inf, 0))
             
-            # Define action as negative log likelihood
+            # Define action with simplified exponent for stability
             action = self.compute_action(x_path)
-            pm.Potential("action", -action / self.hbar)  # Convert action to log-likelihood
+            pm.Potential("action", -action / self.hbar)
             
             # Run NUTS sampler
             self.trace = pm.sample(
