@@ -7,6 +7,41 @@ import pymc as pm
 from pytensor import tensor as pt
 from loguru import logger
 import arviz as az
+from dataclasses import dataclass, field
+
+@dataclass
+class PathIntegralOptimizerResult:
+    """Holds the results of the Path Integral Optimization."""
+    a: float
+    b: float
+    c: float
+    S: float
+    T: int
+    hbar: float
+    num_samples: int
+    num_finite_actions: int
+    best_action: float
+    action_mean: float
+    action_std: float
+    mean_path: np.ndarray
+    std_path: np.ndarray
+
+    def __str__(self) -> str:
+        """Returns a formatted string representation of the results."""
+        summary_lines = [
+            "=== MCMC Summary ===",
+            f"Number of samples: {self.num_samples} (Finite actions: {self.num_finite_actions})",
+            f"Parameters: a={self.a}, b={self.b}, c={self.c}, S={self.S}, T={self.T}, hbar={self.hbar}",
+            f"Best path action: {self.best_action:.4f}",
+            f"Mean action: {self.action_mean:.4f} ± {self.action_std:.4f}",
+            "Mean allocation per time step:",
+            "Time : Mean ± Std Dev"
+        ]
+        for t in range(self.T):
+            summary_lines.append(f"{t+1:2d}   : {self.mean_path[t]:.4f} ± {self.std_path[t]:.4f}")
+        summary_lines.append("====================")
+        return "\n".join(summary_lines)
+
 
 class PathIntegralOptimizer:
     """A class for performing path integral optimization using Markov Chain Monte Carlo (MCMC)."""
@@ -164,15 +199,23 @@ class PathIntegralOptimizer:
             logger.exception(f"Error in plot_top_paths: {e}")
             raise
 
-    def generate_summary(self):
-        """Generates and logs a summary of the MCMC results using ArviZ."""
-        try:
-            if not hasattr(self, 'trace'):
-                logger.warning("No trace collected. Cannot generate summary.")
-                return
+    def generate_summary(self) -> PathIntegralOptimizerResult | None:
+        """Generates a summary of the MCMC results.
 
-            # Convert to ArviZ InferenceData
-            idata = az.convert_to_inference_data(self.trace)
+        Returns:
+            PathIntegralOptimizerResult | None: An object containing the summary results,
+                                                or None if no trace is available.
+        """
+        try:
+            if not hasattr(self, 'trace') or self.trace is None:
+                logger.warning("No trace collected. Cannot generate summary.")
+                return None
+
+            # Convert to ArviZ InferenceData if it's not already
+            if not isinstance(self.trace, az.InferenceData):
+                 idata = az.convert_to_inference_data(self.trace)
+            else:
+                 idata = self.trace
             
             # Get summary statistics
             mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
@@ -193,16 +236,25 @@ class PathIntegralOptimizer:
                 action_mean = float(np.mean(finite_action_values))
                 action_std = float(np.std(finite_action_values))
 
-            logger.info("=== MCMC Summary ===")
-            logger.info(f"Number of samples: {len(x_path_samples)} (Finite actions: {len(finite_action_values)})")
-            logger.info(f"Parameters: a={self.a}, b={self.b}, c={self.c}, S={self.S}, T={self.T}, hbar={self.hbar}")
-            logger.info(f"Best path action: {best_action:.4f}")
-            logger.info(f"Mean action: {action_mean:.4f} ± {action_std:.4f}")
-            logger.info("Mean allocation per time step:")
-            logger.info("Time : Mean ± Std Dev")
-            for t in range(self.T):
-                logger.info(f"{t+1:2d}   : {mean_path[t]:.4f} ± {std_path[t]:.4f}")
-            logger.info("====================")
+            # Create and return the result object
+            result = PathIntegralOptimizerResult(
+                a=self.a,
+                b=self.b,
+                c=self.c,
+                S=self.S,
+                T=self.T,
+                hbar=self.hbar,
+                num_samples=len(x_path_samples),
+                num_finite_actions=len(finite_action_values),
+                best_action=best_action,
+                action_mean=action_mean,
+                action_std=action_std,
+                mean_path=mean_path,
+                std_path=std_path
+            )
+            return result
+
         except Exception as e:
             logger.exception(f"Error in generate_summary: {e}")
             raise
+        return None # Ensure None is returned on exception path as well

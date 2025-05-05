@@ -22,7 +22,12 @@ def main() -> None:
         optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
-        optimizer.generate_summary()
+        summary_result = optimizer.generate_summary()
+
+        if summary_result:
+            logger.info(f"\n{summary_result}") # Log the formatted summary string
+        else:
+            logger.warning("Summary generation failed or was skipped.")
 
     except Exception as e:
         logger.exception(f"An error occurred: {e}")
