@@ -62,7 +62,7 @@ class PathIntegralOptimizer:
         if not isinstance(gp_mean_prior, Dict):
             raise ValueError('gp_mean_prior has to be of type dict')
 
-        config.mode = 'JAX'  # Set JAX mode to avoid BLAS warning
+        #config.mode = 'JAX'  # very slow
 
         # Store priors and fixed values
         self.a_prior_def: Dict[str, Any] = base_benefit
