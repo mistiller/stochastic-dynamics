@@ -22,16 +22,16 @@ def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
 class PathIntegralOptimizer:
     """
     A class for performing path integral optimization using MCMC,
-    allowing for uncertainty in model parameters 'a', 'b', and GP-based d(t).
+    allowing for uncertainty in model parameters 'base_benefit', 'scale_benefit', and GP-based d(t).
     """
     def __init__(self,
-                 a_prior: Dict[str, Any],
-                 b_prior: Dict[str, Any],
+                 base_benefit: Dict[str, Any],
+                 scale_benefit: Dict[str, Any],
                  gp_eta_prior: Dict[str, Any],
                  gp_ell_prior: Dict[str, Any],
                  gp_mean_prior: Dict[str, Any],
-                 c: float,
-                 S: float,
+                 base_cost: float,
+                 total_resource: float,
                  T: int,
                  hbar: float,
                  num_steps: int,
@@ -39,22 +39,22 @@ class PathIntegralOptimizer:
         """Initializes the PathIntegralOptimizer.
 
         Args:
-            a_prior (Dict): Prior definition for parameter 'a'. Ex: {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
-            b_prior (Dict): Prior definition for parameter 'b'. Ex: {"dist": "TruncatedNormal", "mu": 0.5, "sigma": 0.05, "upper": 1.0}
+            base_benefit (Dict): Prior definition for parameter 'base_benefit'. Ex: {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
+            scale_benefit (Dict): Prior definition for parameter 'scale_benefit'. Ex: {"dist": "TruncatedNormal", "mu": 0.5, "sigma": 0.05, "upper": 1.0}
             gp_eta_prior (Dict): Prior for GP amplitude 'eta'. Ex: {"dist": "HalfNormal", "sigma": 1}
             gp_ell_prior (Dict): Prior for GP lengthscale 'ell'. Ex: {"dist": "Gamma", "alpha": 5, "beta": 1}
             gp_mean_prior (Dict): Prior for GP mean 'mean_d'. Ex: {"dist": "Normal", "mu": 2, "sigma": 0.5}
-            c (float): Fixed parameter for cost function.
-            S (float): Fixed total resource.
+            base_cost (float): Fixed parameter for cost function.
+            total_resource (float): Fixed total resource.
             T (int): Fixed number of time steps.
             hbar (float): Fixed noise parameter.
             num_steps (int): Number of MCMC steps.
             burn_in (int): Number of burn-in steps.
         """
-        if not isinstance(a_prior, Dict):
-            raise ValueError('a_prior has to be of type dict')
-        if not isinstance(b_prior, Dict):
-            raise ValueError('b_prior has to be of type dict')
+        if not isinstance(base_benefit, Dict):
+            raise ValueError('base_benefit has to be of type dict')
+        if not isinstance(scale_benefit, Dict):
+            raise ValueError('scale_benefit has to be of type dict')
         if not isinstance(gp_eta_prior, Dict):
             raise ValueError('gp_eta_prior has to be of type dict')
         if not isinstance(gp_ell_prior, Dict):
@@ -65,13 +65,13 @@ class PathIntegralOptimizer:
         config.mode = 'JAX'  # Set JAX mode to avoid BLAS warning
 
         # Store priors and fixed values
-        self.a_prior_def: Dict[str, Any] = a_prior
-        self.b_prior_def: Dict[str, Any] = b_prior
+        self.a_prior_def: Dict[str, Any] = base_benefit
+        self.b_prior_def: Dict[str, Any] = scale_benefit
         self.gp_eta_prior_def: Dict[str, Any] = gp_eta_prior
         self.gp_ell_prior_def: Dict[str, Any] = gp_ell_prior
         self.gp_mean_prior_def: Dict[str, Any] = gp_mean_prior
-        self.c: float = c
-        self.S: float = S
+        self.base_cost: float = base_cost
+        self.total_resource: float = total_resource
         self.T: int = T
         self.hbar: float = hbar
         self.num_steps: int = num_steps
@@ -89,14 +89,14 @@ class PathIntegralOptimizer:
 
     def compute_action(self,
                        x_path: pt.TensorVariable,
-                       a: pt.TensorVariable,
-                       b: pt.TensorVariable,
+                       base_benefit: pt.TensorVariable,
+                       scale_benefit: pt.TensorVariable,
                        d_t: pt.TensorVariable) -> pt.TensorVariable:
-        """Computes the action using PyTensor, accepting 'a' and 'b' as variables."""
+        """Computes the action using PyTensor, accepting 'base_benefit' and 'scale_benefit' as variables."""
         try:
-            # Use passed 'a' and 'b', and fixed 'self.c'
-            benefit = a * x_path ** b
-            cost = self.c * x_path ** d_t  # Vectorized d(t) implementation
+            # Use passed 'base_benefit' and 'scale_benefit', and fixed 'self.base_cost'
+            benefit = base_benefit * x_path ** scale_benefit
+            cost = self.base_cost * x_path ** d_t  # Vectorized d(t) implementation
             return -pt.sum(benefit - cost)
         except Exception as e:
             logger.exception(f"Error in compute_action: {e}")
@@ -104,48 +104,48 @@ class PathIntegralOptimizer:
 
     def _compute_action_numpy(self,
                              x_path: np.ndarray,
-                             a: float,
-                             b: float,
+                             base_benefit: float,
+                             scale_benefit: float,
                              d_t: np.ndarray) -> float:
-        """Computes the action using NumPy, accepting specific 'a' and 'b' values."""
+        """Computes the action using NumPy, accepting specific 'base_benefit' and 'scale_benefit' values."""
         try:
             # Ensure inputs are valid numbers
-            if not (np.isfinite(a) and np.isfinite(b)):
-                logger.warning(f"Non-finite parameter values passed: a={a}, b={b}")
+            if not (np.isfinite(base_benefit) and np.isfinite(scale_benefit)):
+                logger.warning(f"Non-finite parameter values passed: base_benefit={base_benefit}, scale_benefit={scale_benefit}")
                 return np.inf
 
-            # Ensure x_path has no non-positive values before exponentiation, esp. with b<1
+            # Ensure x_path has no non-positive values before exponentiation, esp. with scale_benefit<1
             if np.any(x_path <= 0):
                  logger.warning(f"Path contains non-positive values: {x_path}. Setting action to inf.")
                  return np.inf
             x_safe = x_path # Use directly if checks pass, or add epsilon if needed based on errors
 
-            # Check for potential issues with b < 1 and x near 0
-            benefit = a * np.power(x_safe + 1e-12, b)
+            # Check for potential issues with scale_benefit < 1 and x near 0
+            benefit = base_benefit * np.power(x_safe + 1e-12, scale_benefit)
 
-            cost = self.c * x_safe ** d_t
+            cost = self.base_cost * x_safe ** d_t
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
-                 logger.warning(f"Non-finite action computed for path: {x_path}, a={a:.3f}, b={b:.3f}. Action: {action}")
+                 logger.warning(f"Non-finite action computed for path: {x_path}, base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}. Action: {action}")
                  return np.inf
             return float(action)
 
         except FloatingPointError as fpe:
-             logger.warning(f"Floating point error in _compute_action_numpy for path: {x_path}, a={a:.3f}, b={b:.3f}. Error: {fpe}")
+             logger.warning(f"Floating point error in _compute_action_numpy for path: {x_path}, base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}. Error: {fpe}")
              return np.inf
         except Exception as e:
-            logger.exception(f"Error in _compute_action_numpy (a={a:.3f}, b={b:.3f}): {e}")
+            logger.exception(f"Error in _compute_action_numpy (base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}): {e}")
             raise
 
     def run_mcmc(self) -> None:
-        """Runs the NUTS simulation inferring 'a', 'b', and the path 'x_path'."""
-        logger.info("Starting PyTensor/PyMC MCMC sampling for x_path, a, b, and GP-based d(t)...")
+        """Runs the NUTS simulation inferring 'base_benefit', 'scale_benefit', and the path 'x_path'."""
+        logger.info("Starting PyTensor/PyMC MCMC sampling for x_path, base_benefit, scale_benefit, and GP-based d(t)...")
         try:
             with pm.Model(coords={"t": np.arange(self.T)}) as model:
                 # --- Priors for Parameters ---
-                a = get_pymc_distribution("a", self.a_prior_def)
-                b = get_pymc_distribution("b", self.b_prior_def)
+                base_benefit = get_pymc_distribution("base_benefit", self.a_prior_def)
+                scale_benefit = get_pymc_distribution("scale_benefit", self.b_prior_def)
 
                 # --- GP for d(t): Prior Hyperparameters ---
                 eta = get_pymc_distribution("eta", self.gp_eta_prior_def)
@@ -169,15 +169,15 @@ class PathIntegralOptimizer:
                 # --- Prior for Path (Reparameterized) ---
                 x_raw = pm.Normal("x_raw", mu=0, sigma=1, dims="t")
                 softmax_x_raw = pt.exp(x_raw) / pt.exp(x_raw).sum(axis=0)
-                x_path = pm.Deterministic("x_path", softmax_x_raw * self.S, dims="t")
+                x_path = pm.Deterministic("x_path", softmax_x_raw * self.total_resource, dims="t")
 
                 # --- Potentials ---
                 # Constraints (optional but good practice)
                 pm.Potential("non_negative_path", pt.switch(pt.any(x_path < 0), -np.inf, 0))
                 pm.Potential("finite_check_path", pt.switch(pt.any(pt.isnan(x_path)), -np.inf, 0))
 
-                # Action Potential: depends on sampled a, b and fixed self.hbar, self.c
-                action = self.compute_action(x_path, a, b, d_t)
+                # Action Potential: depends on sampled base_benefit, scale_benefit and fixed self.hbar, self.base_cost
+                action = self.compute_action(x_path, base_benefit, scale_benefit, d_t)
                 # Ensure action is finite before using in potential
                 finite_action = pt.switch(pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar)
                 pm.Potential("action", finite_action)
@@ -198,8 +198,8 @@ class PathIntegralOptimizer:
             # Shape: (chains * draws, T) for path
             self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
             # Shape: (chains * draws,) for params
-            a_samples = self.trace.posterior["a"].values.flatten()
-            b_samples = self.trace.posterior["b"].values.flatten()
+            a_samples = self.trace.posterior["base_benefit"].values.flatten()
+            b_samples = self.trace.posterior["scale_benefit"].values.flatten()
             f_d_samples = self.trace.posterior["f_d"].values.reshape(-1, self.T)  # GP latent function
             d_samples = np.exp(f_d_samples)  # Transform to d(t)
 
@@ -209,8 +209,8 @@ class PathIntegralOptimizer:
             for i in range(num_samples):
                 self.actions[i] = self._compute_action_numpy(
                     x_path=self.mcmc_paths[i], 
-                    a=a_samples[i], 
-                    b=b_samples[i],
+                    base_benefit=a_samples[i], 
+                    scale_benefit=b_samples[i],
                     d_t=d_samples[i]  # Pass GP-derived d(t)
                 )
 
@@ -268,7 +268,7 @@ class PathIntegralOptimizer:
             raise
 
     def generate_summary(self) -> PathIntegralOptimizerResult | None:
-        """Generates a summary of the MCMC results.
+        """Generates base_benefit summary of the MCMC results.
 
         Returns:
             PathIntegralOptimizerResult | None: An object containing the summary results,
@@ -279,7 +279,7 @@ class PathIntegralOptimizer:
                 logger.warning("No trace collected. Cannot generate summary.")
                 return None
 
-            # Convert to ArviZ InferenceData if it's not already
+            # Convert to ArviZ InferenceData if it'total_resource not already
             if not isinstance(self.trace, az.InferenceData):
                  idata = az.convert_to_inference_data(self.trace)
             else:
@@ -291,13 +291,13 @@ class PathIntegralOptimizer:
 
             # Calculate action values from posterior samples using the NumPy version
             x_path_samples = idata.posterior.x_path.values.reshape(-1, self.T)
-            a_samples = idata.posterior["a"].values.flatten() # Get a samples
-            b_samples = idata.posterior["b"].values.flatten() # Get b samples
+            a_samples = idata.posterior["base_benefit"].values.flatten() # Get base_benefit samples
+            b_samples = idata.posterior["scale_benefit"].values.flatten() # Get scale_benefit samples
             f_d_samples = idata.posterior["f_d"].values.reshape(-1, self.T)  # GP latent function
             d_samples = np.exp(f_d_samples)  # Transform to d(t)
 
-            # Pass a and b samples to _compute_action_numpy
-            action_values = np.array([self._compute_action_numpy(x, a, b, d) for x, a, b, d in zip(x_path_samples, a_samples, b_samples, d_samples)])
+            # Pass base_benefit and scale_benefit samples to _compute_action_numpy
+            action_values = np.array([self._compute_action_numpy(x, base_benefit, scale_benefit, d) for x, base_benefit, scale_benefit, d in zip(x_path_samples, a_samples, b_samples, d_samples)])
 
             # Filter out potential non-finite values before finding min/mean/std
             finite_action_values = action_values[np.isfinite(action_values)]
@@ -313,10 +313,10 @@ class PathIntegralOptimizer:
 
             # Create and return the result object
             result = PathIntegralOptimizerResult(
-                a=self.a_prior_def,
-                b=self.b_prior_def,
-                c=self.c,
-                S=self.S,
+                base_benefit=self.a_prior_def,
+                scale_benefit=self.b_prior_def,
+                base_cost=self.base_cost,
+                total_resource=self.total_resource,
                 T=self.T,
                 hbar=self.hbar,
                 num_samples=len(x_path_samples),
