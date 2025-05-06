@@ -153,8 +153,9 @@ class PathIntegralOptimizer:
                 f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
                 d_t = pt.softplus(f_d)  # Safer positivity constraint than exp()
 
-                # --- Prior for Path ---
-                x_path = pm.Dirichlet("x_path", a=np.ones(self.T), dims="t") * self.S
+                # --- Prior for Path (Reparameterized) ---
+                x_raw = pm.Normal("x_raw", mu=0, sigma=1, dims="t")
+                x_path = pm.Deterministic("x_path", pt.nnet.softmax(x_raw) * self.S, dims="t")
 
                 # --- Potentials ---
                 # Constraints (optional but good practice)
@@ -171,7 +172,7 @@ class PathIntegralOptimizer:
                 self.trace = pm.sample(
                     draws=self.num_steps,
                     tune=self.burn_in,
-                    target_accept=0.95, # Increased for better convergence
+                    target_accept=0.99, # Increased to reduce divergences
                     chains=4,         # Standard practice
                     cores=4,          # Use multiple cores if available
                     return_inferencedata=True
