@@ -22,11 +22,14 @@ def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
 class PathIntegralOptimizer:
     """
     A class for performing path integral optimization using MCMC,
-    allowing for uncertainty in model parameters 'a' and 'b'.
+    allowing for uncertainty in model parameters 'a', 'b', and GP-based d(t).
     """
     def __init__(self,
                  a_prior: Dict[str, Any],
                  b_prior: Dict[str, Any],
+                 gp_eta_prior: Dict[str, Any],
+                 gp_ell_prior: Dict[str, Any],
+                 gp_mean_prior: Dict[str, Any],
                  c: float,
                  S: float,
                  T: int,
@@ -38,6 +41,9 @@ class PathIntegralOptimizer:
         Args:
             a_prior (Dict): Prior definition for parameter 'a'. Ex: {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
             b_prior (Dict): Prior definition for parameter 'b'. Ex: {"dist": "TruncatedNormal", "mu": 0.5, "sigma": 0.05, "upper": 1.0}
+            gp_eta_prior (Dict): Prior for GP amplitude 'eta'. Ex: {"dist": "HalfNormal", "sigma": 1}
+            gp_ell_prior (Dict): Prior for GP lengthscale 'ell'. Ex: {"dist": "Gamma", "alpha": 5, "beta": 1}
+            gp_mean_prior (Dict): Prior for GP mean 'mean_d'. Ex: {"dist": "Normal", "mu": 2, "sigma": 0.5}
             c (float): Fixed parameter for cost function.
             S (float): Fixed total resource.
             T (int): Fixed number of time steps.
@@ -48,13 +54,22 @@ class PathIntegralOptimizer:
         if not isinstance(a_prior, Dict):
             raise ValueError('a_prior has to be of type dict')
         if not isinstance(b_prior, Dict):
-            raise ValueError('a_prior has to be of type dict')
-        
-        config.mode = 'JAX'  # Corrected: Set JAX mode to avoid BLAS warning
+            raise ValueError('b_prior has to be of type dict')
+        if not isinstance(gp_eta_prior, Dict):
+            raise ValueError('gp_eta_prior has to be of type dict')
+        if not isinstance(gp_ell_prior, Dict):
+            raise ValueError('gp_ell_prior has to be of type dict')
+        if not isinstance(gp_mean_prior, Dict):
+            raise ValueError('gp_mean_prior has to be of type dict')
+
+        config.mode = 'JAX'  # Set JAX mode to avoid BLAS warning
 
         # Store priors and fixed values
         self.a_prior_def: Dict[str, Any] = a_prior
         self.b_prior_def: Dict[str, Any] = b_prior
+        self.gp_eta_prior_def: Dict[str, Any] = gp_eta_prior
+        self.gp_ell_prior_def: Dict[str, Any] = gp_ell_prior
+        self.gp_mean_prior_def: Dict[str, Any] = gp_mean_prior
         self.c: float = c
         self.S: float = S
         self.T: int = T
@@ -63,8 +78,8 @@ class PathIntegralOptimizer:
         self.burn_in: int = burn_in
 
         # Initialize containers
-        self.mcmc_paths: Optional[np.ndarray] = None # Store all paths from trace later
-        self.actions: Optional[np.ndarray] = None    # Store actions for each sampled path/parameter combo
+        self.mcmc_paths: Optional[np.ndarray] = None  # Store all paths from trace later
+        self.actions: Optional[np.ndarray] = None     # Store actions for each sampled path/parameter combo
         self.trace: Optional[az.InferenceData] = None # Store the full InferenceData
 
     # ... d(t) remains the same ...
@@ -106,8 +121,6 @@ class PathIntegralOptimizer:
             x_safe = x_path # Use directly if checks pass, or add epsilon if needed based on errors
 
             # Check for potential issues with b < 1 and x near 0
-            # benefit = a * x_safe ** b
-            # A very small positive value might be safer if b < 1
             benefit = a * np.power(x_safe + 1e-12, b)
 
             cost = self.c * x_safe ** d_t
@@ -115,12 +128,12 @@ class PathIntegralOptimizer:
 
             if not np.isfinite(action):
                  logger.warning(f"Non-finite action computed for path: {x_path}, a={a:.3f}, b={b:.3f}. Action: {action}")
-                 return np.inf # Return infinity for non-finite actions
+                 return np.inf
             return float(action)
 
         except FloatingPointError as fpe:
              logger.warning(f"Floating point error in _compute_action_numpy for path: {x_path}, a={a:.3f}, b={b:.3f}. Error: {fpe}")
-             return np.inf # Treat FPEs as invalid paths
+             return np.inf
         except Exception as e:
             logger.exception(f"Error in _compute_action_numpy (a={a:.3f}, b={b:.3f}): {e}")
             raise
@@ -135,9 +148,9 @@ class PathIntegralOptimizer:
                 b = get_pymc_distribution("b", self.b_prior_def)
 
                 # --- GP for d(t): Prior Hyperparameters ---
-                eta = pm.HalfNormal("eta", sigma=1)  # More stable than HalfCauchy
-                ell = pm.Gamma("ell", alpha=5, beta=1)  # More informative lengthscale prior
-                mean_d = pm.Normal("mean_d", mu=2, sigma=0.5)  # Tighter mean prior
+                eta = get_pymc_distribution("eta", self.gp_eta_prior_def)
+                ell = get_pymc_distribution("ell", self.gp_ell_prior_def)
+                mean_d = get_pymc_distribution("mean_d", self.gp_mean_prior_def)
 
                 # --- GP Covariance Function ---
                 cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ell) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
@@ -271,7 +284,7 @@ class PathIntegralOptimizer:
                  idata = az.convert_to_inference_data(self.trace)
             else:
                  idata = self.trace
-            
+
             # Get summary statistics
             mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
             std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
