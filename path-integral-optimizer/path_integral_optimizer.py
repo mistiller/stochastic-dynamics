@@ -135,21 +135,23 @@ class PathIntegralOptimizer:
                 b = get_pymc_distribution("b", self.b_prior_def)
 
                 # --- GP for d(t): Prior Hyperparameters ---
-                eta = pm.HalfCauchy("eta", beta=5)  # Amplitude
-                ell = pm.Gamma("ell", alpha=2, beta=0.5)  # Lengthscale
-                mean_d = pm.Normal("mean_d", mu=2, sigma=1)  # Prior on mean of d(t)
+                eta = pm.HalfNormal("eta", sigma=1)  # More stable than HalfCauchy
+                ell = pm.Gamma("ell", alpha=5, beta=1)  # More informative lengthscale prior
+                mean_d = pm.Normal("mean_d", mu=2, sigma=0.5)  # Tighter mean prior
 
                 # --- GP Covariance Function ---
-                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ell)  # RBF kernel
+                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ell) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
 
                 # --- GP Definition ---
                 X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
+                X = (X - np.mean(X)) / np.std(X)  # Standardize input for GP
+
                 gp_d = pm.gp.Latent(
                     mean_func=pm.gp.mean.Constant(mean_d),
                     cov_func=cov_d
                 )
                 f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
-                d_t = pm.math.exp(f_d)  # Ensure positivity via exp()
+                d_t = pm.math.softplus(f_d)  # Safer positivity constraint than exp()
 
                 # --- Prior for Path ---
                 x_path = pm.Dirichlet("x_path", a=np.ones(self.T), dims="t") * self.S
