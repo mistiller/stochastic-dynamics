@@ -50,7 +50,7 @@ class PathIntegralOptimizer:
         if not isinstance(b_prior, Dict):
             raise ValueError('a_prior has to be of type dict')
         
-        config.mode == 'JAX'
+        config.mode = 'JAX'  # Corrected: Set JAX mode to avoid BLAS warning
 
         # Store priors and fixed values
         self.a_prior_def: Dict[str, Any] = a_prior
