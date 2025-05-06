@@ -187,8 +187,9 @@ class PathIntegralOptimizer:
                     draws=self.num_steps,
                     tune=self.burn_in,
                     target_accept=0.99, # Increased to reduce divergences
-                    chains=4,         # Standard practice
-                    cores=4,          # Use multiple cores if available
+                    max_treedepth=12,   # Increased to allow deeper exploration
+                    chains=4,           # Standard practice
+                    cores=4,            # Use multiple cores if available
                     return_inferencedata=True
                 )
 
