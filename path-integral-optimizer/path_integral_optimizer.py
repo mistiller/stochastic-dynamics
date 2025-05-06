@@ -151,7 +151,7 @@ class PathIntegralOptimizer:
                     cov_func=cov_d
                 )
                 f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
-                d_t = pm.math.softplus(f_d)  # Safer positivity constraint than exp()
+                d_t = pt.softplus(f_d)  # Safer positivity constraint than exp()
 
                 # --- Prior for Path ---
                 x_path = pm.Dirichlet("x_path", a=np.ones(self.T), dims="t") * self.S
