@@ -8,8 +8,14 @@ def main() -> None:
     logger.info("Starting the stochastic dynamics application")
 
     # Parameters
-    a: dict = {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
-    b: float = {"dist": "Beta", "alpha": 2.0, "beta": 2.0}
+    a_prior: dict = {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
+    b_prior: dict = {"dist": "Beta", "alpha": 2.0, "beta": 2.0}
+    
+    # GP priors for d(t)
+    gp_eta_prior: Dict[str, Any] = {"dist": "HalfNormal", "sigma": 1}
+    gp_ell_prior: Dict[str, Any] = {"dist": "Gamma", "alpha": 5, "beta": 1}
+    gp_mean_prior: Dict[str, Any] = {"dist": "Normal", "mu": 2, "sigma": 0.5}
+
     c: float = 0.5  # Reduced for numerical stability
     S: float = 10    # Reduced for numerical stability
     T: int = 5       # Reduced for numerical stability
@@ -18,7 +24,11 @@ def main() -> None:
     burn_in: int = 500     # Reduced for testing
 
     try:
-        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in)
+        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(
+            a_prior, b_prior,
+            gp_eta_prior, gp_ell_prior, gp_mean_prior,
+            c, S, T, hbar, num_steps, burn_in
+        )
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
         summary_result = optimizer.generate_summary()
