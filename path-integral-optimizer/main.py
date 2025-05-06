@@ -1,9 +1,13 @@
+import sys
+import multiprocessing
+
 from loguru import logger
 
 from path_integral_optimizer import PathIntegralOptimizer
 
-def main() -> None:
-    """Main function to execute the stochastic dynamics application."""
+# Set multiprocessing start method to 'spawn' to avoid JAX multithreading deadlock
+if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn')
     logger.add("stoch_dyn.log", rotation="500 MB", level="INFO")
     logger.info("Starting the stochastic dynamics application")
 
@@ -12,9 +16,9 @@ def main() -> None:
     b_prior: dict = {"dist": "Beta", "alpha": 2.0, "beta": 2.0}
     
     # GP priors for d(t)
-    gp_eta_prior: Dict[str, Any] = {"dist": "HalfNormal", "sigma": 1}
-    gp_ell_prior: Dict[str, Any] = {"dist": "Gamma", "alpha": 5, "beta": 1}
-    gp_mean_prior: Dict[str, Any] = {"dist": "Normal", "mu": 2, "sigma": 0.5}
+    gp_eta_prior: dict = {"dist": "HalfNormal", "sigma": 1}
+    gp_ell_prior: dict = {"dist": "Gamma", "alpha": 5, "beta": 1}
+    gp_mean_prior: dict = {"dist": "Normal", "mu": 2, "sigma": 0.5}
 
     c: float = 0.5  # Reduced for numerical stability
     S: float = 10    # Reduced for numerical stability
@@ -42,6 +46,3 @@ def main() -> None:
         logger.exception(f"An error occurred: {e}")
 
     logger.info("Stochastic dynamics application finished")
-
-if __name__ == "__main__":
-    main()
