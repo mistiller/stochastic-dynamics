@@ -155,7 +155,8 @@ class PathIntegralOptimizer:
 
                 # --- Prior for Path (Reparameterized) ---
                 x_raw = pm.Normal("x_raw", mu=0, sigma=1, dims="t")
-                x_path = pm.Deterministic("x_path", pt.nnet.softmax(x_raw) * self.S, dims="t")
+                softmax_x_raw = pt.exp(x_raw) / pt.exp(x_raw).sum(axis=0)
+                x_path = pm.Deterministic("x_path", softmax_x_raw * self.S, dims="t")
 
                 # --- Potentials ---
                 # Constraints (optional but good practice)
