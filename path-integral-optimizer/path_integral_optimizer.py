@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from typing import List, Dict, Any, Optional
 import pymc as pm
 from pytensor import tensor as pt
+from pytensor import config
 from loguru import logger
 import arviz as az
 
@@ -49,6 +50,8 @@ class PathIntegralOptimizer:
         if not isinstance(b_prior, Dict):
             raise ValueError('a_prior has to be of type dict')
         
+        config.mode == 'JAX'
+
         # Store priors and fixed values
         self.a_prior_def: Dict[str, Any] = a_prior
         self.b_prior_def: Dict[str, Any] = b_prior
