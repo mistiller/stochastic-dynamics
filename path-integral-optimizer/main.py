@@ -8,18 +8,17 @@ def main() -> None:
     logger.info("Starting the stochastic dynamics application")
 
     # Parameters
-    a: float = 1.0  # Reduced for numerical stability
-    b: float = 0.5
+    a: dict = {"dist": "Normal", "mu": 1.0, "sigma": 0.1}
+    b: float = {"dist": "Beta", "alpha": 2.0, "beta": 2.0}
     c: float = 0.5  # Reduced for numerical stability
     S: float = 10    # Reduced for numerical stability
     T: int = 5       # Reduced for numerical stability
     hbar: float = 0.1
     num_steps: int = 1000  # Reduced for testing
     burn_in: int = 500     # Reduced for testing
-    proposal_stddev: float = 0.5  # Standard deviation for proposal distribution
 
     try:
-        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in, proposal_stddev)
+        optimizer: PathIntegralOptimizer = PathIntegralOptimizer(a, b, c, S, T, hbar, num_steps, burn_in)
         optimizer.run_mcmc()
         optimizer.plot_top_paths()
         summary_result = optimizer.generate_summary()
