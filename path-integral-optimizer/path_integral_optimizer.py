@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Dict, Any, Optional # Added Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 import pymc as pm
 from pytensor import tensor as pt
 from loguru import logger
@@ -72,14 +72,13 @@ class PathIntegralOptimizer:
     def compute_action(self,
                        x_path: pt.TensorVariable,
                        a: pt.TensorVariable,
-                       b: pt.TensorVariable) -> pt.TensorVariable:
+                       b: pt.TensorVariable,
+                       d_t: pt.TensorVariable) -> pt.TensorVariable:
         """Computes the action using PyTensor, accepting 'a' and 'b' as variables."""
         try:
-            t = np.arange(1, self.T + 1)
-            x_safe = x_path + 1e-9 # Add small epsilon for numerical stability
             # Use passed 'a' and 'b', and fixed 'self.c'
-            benefit = a * x_safe ** b
-            cost = self.c * x_safe ** (2 + 0.1 * t)  # Vectorized d(t) implementation
+            benefit = a * x_path ** b
+            cost = self.c * x_path ** d_t  # Vectorized d(t) implementation
             return -pt.sum(benefit - cost)
         except Exception as e:
             logger.exception(f"Error in compute_action: {e}")
@@ -88,7 +87,8 @@ class PathIntegralOptimizer:
     def _compute_action_numpy(self,
                              x_path: np.ndarray,
                              a: float,
-                             b: float) -> float:
+                             b: float,
+                             d_t: np.ndarray) -> float:
         """Computes the action using NumPy, accepting specific 'a' and 'b' values."""
         try:
             # Ensure inputs are valid numbers
@@ -96,7 +96,6 @@ class PathIntegralOptimizer:
                 logger.warning(f"Non-finite parameter values passed: a={a}, b={b}")
                 return np.inf
 
-            t = np.arange(1, self.T + 1)
             # Ensure x_path has no non-positive values before exponentiation, esp. with b<1
             if np.any(x_path <= 0):
                  logger.warning(f"Path contains non-positive values: {x_path}. Setting action to inf.")
@@ -108,7 +107,7 @@ class PathIntegralOptimizer:
             # A very small positive value might be safer if b < 1
             benefit = a * np.power(x_safe + 1e-12, b)
 
-            cost = self.c * x_safe ** (2 + 0.1 * t)
+            cost = self.c * x_safe ** d_t
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
@@ -125,15 +124,31 @@ class PathIntegralOptimizer:
 
     def run_mcmc(self) -> None:
         """Runs the NUTS simulation inferring 'a', 'b', and the path 'x_path'."""
-        logger.info("Starting PyTensor/PyMC MCMC sampling for x_path, a, and b...")
+        logger.info("Starting PyTensor/PyMC MCMC sampling for x_path, a, b, and GP-based d(t)...")
         try:
             with pm.Model(coords={"t": np.arange(self.T)}) as model:
                 # --- Priors for Parameters ---
                 a = get_pymc_distribution("a", self.a_prior_def)
                 b = get_pymc_distribution("b", self.b_prior_def)
 
+                # --- GP for d(t): Prior Hyperparameters ---
+                eta = pm.HalfCauchy("eta", beta=5)  # Amplitude
+                ell = pm.Gamma("ell", alpha=2, beta=0.5)  # Lengthscale
+                mean_d = pm.Normal("mean_d", mu=2, sigma=1)  # Prior on mean of d(t)
+
+                # --- GP Covariance Function ---
+                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ell)  # RBF kernel
+
+                # --- GP Definition ---
+                X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
+                gp_d = pm.gp.Latent(
+                    mean_func=pm.gp.mean.Constant(mean_d),
+                    cov_func=cov_d
+                )
+                f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
+                d_t = pm.math.exp(f_d)  # Ensure positivity via exp()
+
                 # --- Prior for Path ---
-                # Use fixed self.S for scaling
                 x_path = pm.Dirichlet("x_path", a=np.ones(self.T), dims="t") * self.S
 
                 # --- Potentials ---
@@ -142,7 +157,7 @@ class PathIntegralOptimizer:
                 pm.Potential("finite_check_path", pt.switch(pt.any(pt.isnan(x_path)), -np.inf, 0))
 
                 # Action Potential: depends on sampled a, b and fixed self.hbar, self.c
-                action = self.compute_action(x_path, a, b)
+                action = self.compute_action(x_path, a, b, d_t)
                 # Ensure action is finite before using in potential
                 finite_action = pt.switch(pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar)
                 pm.Potential("action", finite_action)
@@ -151,7 +166,7 @@ class PathIntegralOptimizer:
                 self.trace = pm.sample(
                     draws=self.num_steps,
                     tune=self.burn_in,
-                    target_accept=0.9, # Might need adjustment
+                    target_accept=0.95, # Increased for better convergence
                     chains=4,         # Standard practice
                     cores=4,          # Use multiple cores if available
                     return_inferencedata=True
@@ -165,6 +180,8 @@ class PathIntegralOptimizer:
             # Shape: (chains * draws,) for params
             a_samples = self.trace.posterior["a"].values.flatten()
             b_samples = self.trace.posterior["b"].values.flatten()
+            f_d_samples = self.trace.posterior["f_d"].values.reshape(-1, self.T)  # GP latent function
+            d_samples = np.exp(f_d_samples)  # Transform to d(t)
 
             # Calculate action for each sample using corresponding sampled parameters
             num_samples = len(self.mcmc_paths)
@@ -173,7 +190,8 @@ class PathIntegralOptimizer:
                 self.actions[i] = self._compute_action_numpy(
                     x_path=self.mcmc_paths[i], 
                     a=a_samples[i], 
-                    b=b_samples[i]
+                    b=b_samples[i],
+                    d_t=d_samples[i]  # Pass GP-derived d(t)
                 )
 
             # Log how many actions were finite
@@ -255,9 +273,11 @@ class PathIntegralOptimizer:
             x_path_samples = idata.posterior.x_path.values.reshape(-1, self.T)
             a_samples = idata.posterior["a"].values.flatten() # Get a samples
             b_samples = idata.posterior["b"].values.flatten() # Get b samples
+            f_d_samples = idata.posterior["f_d"].values.reshape(-1, self.T)  # GP latent function
+            d_samples = np.exp(f_d_samples)  # Transform to d(t)
 
             # Pass a and b samples to _compute_action_numpy
-            action_values = np.array([self._compute_action_numpy(x, a, b) for x, a, b in zip(x_path_samples, a_samples, b_samples)])
+            action_values = np.array([self._compute_action_numpy(x, a, b, d) for x, a, b, d in zip(x_path_samples, a_samples, b_samples, d_samples)])
 
             # Filter out potential non-finite values before finding min/mean/std
             finite_action_values = action_values[np.isfinite(action_values)]
@@ -293,4 +313,3 @@ class PathIntegralOptimizer:
             logger.exception(f"Error in generate_summary: {e}")
             raise
         return None # Ensure None is returned on exception path as well
-
