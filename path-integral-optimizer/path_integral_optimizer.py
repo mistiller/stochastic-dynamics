@@ -109,6 +109,10 @@ class PathIntegralOptimizer:
                 logger.warning(f"Non-finite parameter values passed: base_benefit={base_benefit}, scale_benefit={scale_benefit}")
                 return np.inf
 
+            x_path = np.clip(x_path, a_min=1e-12, a_max=1e6)  #Adjust min/max based on problem
+            base_benefit = np.clip(base_benefit, a_min=0.0, a_max=1e6)
+            scale_benefit = np.clip(scale_benefit, a_min=0.0, a_max=1.0)
+
             # Ensure x_path has no non-positive values before exponentiation, esp. with scale_benefit<1
             if np.any(x_path <= 0):
                  logger.warning(f"Path contains non-positive values: {x_path}. Setting action to inf.")
@@ -117,8 +121,15 @@ class PathIntegralOptimizer:
 
             # Check for potential issues with scale_benefit < 1 and x near 0
             benefit = base_benefit * np.power(x_safe + 1e-12, scale_benefit)
+            if not np.all(np.isfinite(benefit)):
+                logger.warning(f"Non-finite benefit values: {benefit}")
+                return np.inf
 
             cost = self.base_cost * x_safe ** d_t
+            if not np.all(np.isfinite(cost)):
+                logger.warning(f"Non-finite cost values: {cost}")
+                return np.inf
+
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
@@ -159,7 +170,7 @@ class PathIntegralOptimizer:
                     cov_func=cov_d
                 )
                 f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
-                d_t = pt.softplus(f_d)  # Safer positivity constraint than exp()
+                d_t = pt.softplus(f_d) + 1e-6  # Safer positivity constraint than exp()
 
                 # --- Prior for Path (Reparameterized) ---
                 x_raw = pm.Normal("x_raw", mu=0, sigma=1, dims="t")

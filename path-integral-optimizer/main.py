@@ -22,10 +22,10 @@ if __name__ == "__main__":
 
     base_cost: float = 0.5  # Reduced for numerical stability
     total_resource: float = 10    # Reduced for numerical stability
-    T: int = 5       # Reduced for numerical stability
+    T: int = 12
     hbar: float = 0.1
     num_steps: int = 1000  # Reduced for testing
-    burn_in: int = 500     # Reduced for testing
+    burn_in: int = 1000     # Reduced for testing
 
     try:
         optimizer: PathIntegralOptimizer = PathIntegralOptimizer(
@@ -34,7 +34,7 @@ if __name__ == "__main__":
             base_cost, total_resource, T, hbar, num_steps, burn_in
         )
         optimizer.run_mcmc()
-        optimizer.plot_top_paths()
+        optimizer.plot()
         summary_result = optimizer.generate_summary()
 
         if summary_result:
