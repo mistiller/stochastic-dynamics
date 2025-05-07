@@ -82,11 +82,6 @@ class PathIntegralOptimizer:
         self.actions: Optional[np.ndarray] = None     # Store actions for each sampled path/parameter combo
         self.trace: Optional[az.InferenceData] = None # Store the full InferenceData
 
-    # ... d(t) remains the same ...
-    def d(self, t: int) -> float:
-        """Defines the time-dependent function d(t)."""
-        return 2 + 0.1 * t
-
     def compute_action(self,
                        x_path: pt.TensorVariable,
                        base_benefit: pt.TensorVariable,
