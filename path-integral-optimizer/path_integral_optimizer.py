@@ -264,33 +264,34 @@ class PathIntegralOptimizer:
             raise
 
     def plot(self) -> None:
-        """Plots all generated paths with a shaded area and a dashed line for the mean path."""
+        """Plots generated paths with shaded quintiles and a dashed line for the mean path."""
         if self.mcmc_paths is None:
             logger.warning("No paths available. Run run_mcmc() first.")
             return
 
         plt.figure(figsize=(10, 6))
         
-        # Calculate percentiles for shaded area
-        lower_bound = np.percentile(self.mcmc_paths, 5, axis=0)
-        upper_bound = np.percentile(self.mcmc_paths, 95, axis=0)
+        # Calculate quintiles for shaded areas
+        quintiles = [20, 40, 60, 80]
+        colors = ['#1f77b4', '#1f77b4', '#1f77b4', '#1f77b4']  # Different shades of blue
+        alphas = [0.2, 0.3, 0.4, 0.3]  # Different transparency levels
         
-        # Plot shaded area for 90% confidence interval
-        plt.fill_between(range(1, self.T + 1), lower_bound, upper_bound, 
-                        color='blue', alpha=0.2, label='90% Confidence Interval')
-        
-        # Plot individual paths with transparency
-        for path in self.mcmc_paths:
-            plt.plot(range(1, self.T + 1), path, color='blue', alpha=0.1)
+        # Plot shaded areas for each quintile
+        for i, quintile in enumerate(quintiles):
+            lower = np.percentile(self.mcmc_paths, quintile, axis=0)
+            upper = np.percentile(self.mcmc_paths, 100 - quintile, axis=0)
+            plt.fill_between(range(1, self.T + 1), lower, upper, 
+                           color=colors[i], alpha=alphas[i], 
+                           label=f'{quintile}% - {100-quintile}%')
         
         # Calculate and plot mean path
         mean_path = np.mean(self.mcmc_paths, axis=0)
-        plt.plot(range(1, self.T + 1), mean_path, color='red', 
+        plt.plot(range(1, 1 + self.T), mean_path, color='red', 
                 linestyle='--', linewidth=2, label='Mean Path')
         
         plt.xlabel("Time (t)")
         plt.ylabel("Allocation (x(t))")
-        plt.title("Generated Paths with Mean and 90% Confidence Interval")
+        plt.title("Generated Paths with Quintiles and Mean Path")
         plt.legend()
         plt.grid(True)
         plt.show()
