@@ -10,9 +10,19 @@ from path_integral_optimizer import (
 )
 
 def main():
-    data:tuple[np.array]=SyntheticDataset().arrays()
+    hbar: float = 0.1
+    num_steps: int = 1000  # Reduced for testing
+    burn_in: int = 1000     # Reduced for testing
+
+    data:tuple[np.array]=SyntheticDataset() \
+        .generate() \
+        .arrays()
+        
     optimizer: PathIntegralOptimizer=PathIntegralOptimizer.from_data(
-        *data
+        *data,
+        hbar,
+        num_steps,
+        burn_in
     )
 
     optimizer.run_mcmc()
@@ -34,6 +44,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logger.error(f"An error occurred: {e}")
-        sys.exit(1)
+        raise e
 
     logger.info("Stochastic dynamics application finished")

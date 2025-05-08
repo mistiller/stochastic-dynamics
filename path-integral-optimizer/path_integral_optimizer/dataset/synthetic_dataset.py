@@ -45,7 +45,7 @@ class SyntheticDataset:
         input_series /= input_series[0]  # Start at 1.0
         
         # Create time-varying cost component (quadratic trend + noise)
-        t = np.arange(self.T)
+        t = np.arange(1, self.T+1)
         time_effect = 0.1 * t + 0.05 * t**2
         
         # Generate cost and benefit series

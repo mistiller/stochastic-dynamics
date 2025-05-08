@@ -19,7 +19,7 @@ class Dataset:
             raise TypeError("benefit must be a numpy array")
 
         if len(self.t) != len(self.input):
-            raise ValueError("t and input must have the same length")
+            raise ValueError(f"t and input must have the same length ({len(self.t)}:{len(self.input)})")
         if len(self.t) != len(self.cost):
             raise ValueError("t and cost must have the same length")
         if len(self.t) != len(self.benefit):

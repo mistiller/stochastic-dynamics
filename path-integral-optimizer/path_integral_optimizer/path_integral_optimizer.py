@@ -8,8 +8,10 @@ from loguru import logger
 import arviz as az
 
 # Assuming PathIntegralOptimizerResult will be updated to handle posterior summaries
-from path_integral_optimizer_result import PathIntegralOptimizerResult
+from .path_integral_optimizer_result import PathIntegralOptimizerResult
+from .parameter_estimator import ParameterEstimator
 from .parameter_estimation_result import ParameterEstimationResult
+from .dataset import Dataset
 
 # Helper function to create PyMC distributions from dict descriptions
 def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
@@ -395,7 +397,7 @@ class PathIntegralOptimizer:
         burn_in:int,
         t:Optional[np.array]=None
         ):
-        _t=t or np.arange(1, len(input))
+        _t=t or np.arange(1, len(input)+1)
         data:Dataset=Dataset(
             t=_t,
             input=input,
