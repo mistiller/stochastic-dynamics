@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 import arviz as az
 from pytensor import tensor as pt
 from .parameter_estimation_result import ParameterEstimationResult
+from .synthetic_dataset import SyntheticDataset
 
 
 class ParameterEstimator:
