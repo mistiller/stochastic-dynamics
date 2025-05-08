@@ -17,6 +17,15 @@ uv pip install -r requirements.txt --all-extras
 
 ## Core Components
 
+### ParameterEstimator Class
+
+Key methods:
+- `run_mcmc()`: Estimates parameters from historical data using MCMC
+- Returns `ParameterEstimationResult` with:
+  - Estimated parameters for cost/benefit functions
+  - GP hyperparameters
+  - Full MCMC trace data
+
 ### PathIntegralOptimizer Class
 
 Key initialization parameters:

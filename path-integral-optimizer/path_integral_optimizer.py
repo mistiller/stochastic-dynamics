@@ -9,6 +9,7 @@ import arviz as az
 
 # Assuming PathIntegralOptimizerResult will be updated to handle posterior summaries
 from path_integral_optimizer_result import PathIntegralOptimizerResult
+from .parameter_estimator import ParameterEstimationResult
 
 # Helper function to create PyMC distributions from dict descriptions
 def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
@@ -25,7 +26,7 @@ class PathIntegralOptimizer:
     allowing for uncertainty in model parameters 'base_benefit', 'scale_benefit', and GP-based d(t).
     """
     def __init__(self,
-                 base_benefit: Dict[str, Any],
+                 base_benefit: Dict[str, Any] | ParameterEstimationResult,
                  scale_benefit: Dict[str, Any],
                  gp_eta_prior: Dict[str, Any],
                  gp_ell_prior: Dict[str, Any],
@@ -36,6 +37,15 @@ class PathIntegralOptimizer:
                  hbar: float,
                  num_steps: int,
                  burn_in: int) -> None:
+        """Initialize with either individual parameters or ParameterEstimationResult"""
+        if isinstance(base_benefit, ParameterEstimationResult):
+            est = base_benefit
+            base_cost = est.base_cost['mu']
+            base_benefit = {'dist': 'Normal', 'mu': est.base_benefit['mu'], 'sigma': est.base_benefit['sigma']}
+            scale_benefit = {'dist': 'Normal', 'mu': est.scale_benefit['mu'], 'sigma': est.scale_benefit['sigma']}
+            gp_eta_prior = {'dist': 'Normal', 'mu': est.gp_eta_prior['mu'], 'sigma': est.gp_eta_prior['sigma']}
+            gp_ell_prior = {'dist': 'Normal', 'mu': est.gp_ell_prior['mu'], 'sigma': est.gp_ell_prior['sigma']}
+            gp_mean_prior = {'dist': 'Normal', 'mu': est.gp_mean_prior['mu'], 'sigma': est.gp_mean_prior['sigma']}
         """Initializes the PathIntegralOptimizer.
 
         Args:
