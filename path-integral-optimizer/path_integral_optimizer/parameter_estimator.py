@@ -36,14 +36,14 @@ class ParameterEstimator:
         """Construct the PyMC model for parameter estimation."""
         with self.model:
             # Priors for base parameters
-            base_cost = pm.HalfNormal("base_cost", **self.priors['base_cost'])
-            base_benefit = pm.Normal("base_benefit", **self.priors['base_benefit'])
-            scale_benefit = pm.HalfNormal("scale_benefit", **self.priors['scale_benefit'])
+            base_cost = pm.HalfNormal("base_cost", sigma=self.priors['base_cost']['sigma'])
+            base_benefit = pm.Normal("base_benefit", mu=self.priors['base_benefit']['mu'], sigma=self.priors['base_benefit']['sigma'])
+            scale_benefit = pm.HalfNormal("scale_benefit", sigma=self.priors['scale_benefit']['sigma'])
             
             # GP priors for time-varying cost component
-            eta = pm.HalfNormal("eta", **self.priors['gp_eta'])
-            ell = pm.Gamma("ell", **self.priors['gp_ell'])
-            mean_d = pm.Normal("mean_d", **self.priors['gp_mean'])
+            eta = pm.HalfNormal("eta", sigma=self.priors['gp_eta']['sigma'])
+            ell = pm.Gamma("ell", alpha=self.priors['gp_ell']['alpha'], beta=self.priors['gp_ell']['beta'])
+            mean_d = pm.Normal("mean_d", mu=self.priors['gp_mean']['mu'], sigma=self.priors['gp_mean']['sigma'])
             
             # Construct GP covariance function
             cov = eta**2 * pm.gp.cov.ExpQuad(1, ls=ell)
