@@ -1,10 +1,12 @@
 import numpy as np
 from typing import Dict
 
+from .dataset import Dataset
+
 class SyntheticDataset:
     """Generates synthetic time series data for testing parameter estimation.
     
-    Produces a dictionary with:
+    Produces a Dataset object with:
     - 't': Time indices (1 to T)
     - 'input': Random walk input values
     - 'cost': Function of input + time-dependent component
@@ -33,7 +35,7 @@ class SyntheticDataset:
         self.benefit_noise = benefit_noise
         self.random_walk_std = random_walk_std
 
-    def generate(self) -> Dict[str, np.ndarray]:
+    def generate(self) -> Dataset:
         """Generate synthetic dataset with random walk input and noisy observations."""
         # Generate random walk input starting from 1.0
         input_series = np.cumprod(np.exp(np.random.normal(
@@ -58,9 +60,9 @@ class SyntheticDataset:
             + np.random.normal(scale=self.benefit_noise, size=self.T)
         )
         
-        return {
-            't': t,
-            'input': input_series,
-            'cost': cost,
-            'benefit': benefit
-        }
+        return Dataset(
+            t,
+            input_series, 
+            cost, 
+            benefit
+        )

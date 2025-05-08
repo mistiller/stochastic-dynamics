@@ -61,11 +61,11 @@ Partial derivatives of the optimal value function illustrate sensitivity:
 
 * **With respect to ****$b$****:**
 
-$$\frac{\partial Q^*}{\partial b} = \sum_{t=1}^{12} a x^*(t)^b \ln(x^*(t))$$
+$$ \frac{\partial Q^*}{\partial b} = \sum_{t=1}^{12} a x^*(t)^b \ln(x^*(t)) $$
 
 * **With respect to ****$d(t)$****:**
 
-$$\frac{\partial Q^*}{\partial d(t)} = -c x^*(t)^{d(t)} \ln(x^*(t))$$
+$$ \frac{\partial Q^*}{\partial d(t)} = -c x^*(t)^{d(t)} \ln(x^*(t)) $$
 
 These follow from the envelope theorem (Saltelli et al., 2004), showing how global and time-specific parameters affect outcomes.
 
@@ -81,7 +81,7 @@ The parameter $b$ impacts all periods cumulatively, while $d(t)$ influences only
 
 Define a scalar field $Q(b, d, t)$ and derive the dynamics via the **Hamilton–Jacobi equation**:
 
-$$\frac{dQ}{dt} = \frac{\partial Q}{\partial t} + \frac{\partial Q}{\partial b} \frac{db}{dt} + \frac{\partial Q}{\partial d} \frac{dd}{dt} = 0$$
+$$ \frac{dQ}{dt} = \frac{\partial Q}{\partial t} + \frac{\partial Q}{\partial b} \frac{db}{dt} + \frac{\partial Q}{\partial d} \frac{dd}{dt} = 0 $$
 
 This enforces optimality along parameter trajectories (Arnold, 1989).
 

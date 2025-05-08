@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 import arviz as az
 from pytensor import tensor as pt
+
 from .parameter_estimation_result import ParameterEstimationResult
-from .synthetic_dataset import SyntheticDataset
+from .dataset import Dataset
 
 
 class ParameterEstimator:
@@ -16,9 +17,9 @@ class ParameterEstimator:
     - 't' (time points), 'input', 'cost', 'benefit' (all numpy arrays)
     """
     
-    def __init__(self, data: Dict[str, np.ndarray]):
-        self.data = data
-        self.T = len(data['t'])
+    def __init__(self, data: Dataset):
+        self.data:Dataset = data
+        self.T = len(data.t)
         self.model = pm.Model()
         
         # Initialize parameter priors with reasonable defaults
@@ -47,17 +48,17 @@ class ParameterEstimator:
             # Construct GP covariance function
             cov = eta**2 * pm.gp.cov.ExpQuad(1, ls=ell)
             gp = pm.gp.Latent(mean_func=pm.gp.mean.Constant(mean_d))
-            f_d = gp.prior("f_d", X=self.data['t'][:, None])
+            f_d = gp.prior("f_d", X=self.data.t[:, None])
             d_t = pt.exp(f_d)  # Ensure positive values
             
             # Observation models
-            cost_model = base_cost + d_t * self.data['input']
-            pm.Normal("cost_obs", mu=cost_model, sigma=0.1, observed=self.data['cost'])
+            cost_model = base_cost + d_t * self.data.input
+            pm.Normal("cost_obs", mu=cost_model, sigma=0.1, observed=self.data.cost)
             
-            benefit_model = base_benefit + scale_benefit * self.data['input']
-            pm.Normal("benefit_obs", mu=benefit_model, sigma=0.1, observed=self.data['benefit'])
+            benefit_model = base_benefit + scale_benefit * self.data.input
+            pm.Normal("benefit_obs", mu=benefit_model, sigma=0.1, observed=self.data.benefit)
 
-    def run_mcmc(self, draws=1000, tune=1000, chains=4) -> ParameterEstimationResult:
+    def get_parameters(self, draws=1000, tune=1000, chains=4) -> ParameterEstimationResult:
         """Run MCMC sampling to estimate parameters."""
         self._build_model()
         
