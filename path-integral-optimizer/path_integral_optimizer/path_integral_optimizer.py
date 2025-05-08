@@ -14,7 +14,7 @@ from .parameter_estimation_result import ParameterEstimationResult
 from .dataset import Dataset
 
 # Helper function to create PyMC distributions from dict descriptions
-def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
+def get_pymc_distribution(name: str, prior_info: Dict[str, Any])->pm.Distribution:
     """
     Creates a PyMC distribution based on a dictionary description.
     Handles conversion from {'mu': ..., 'sigma': ...} to distribution-specific
@@ -115,6 +115,8 @@ def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
                 alpha = max(alpha, 1e-6)
                 beta = max(beta, 1e-6)
                 logger.info(f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Gamma(alpha={alpha:.3f}, beta={beta:.3f}) for '{name}'.")
+
+                return pm.Gamma(name, alpha, beta)
             else:
                 raise ValueError(f"Gamma prior for {name} requires either 'alpha' and 'beta' or 'mu' and 'sigma'. Got {prior_info}")
 
@@ -293,8 +295,11 @@ class PathIntegralOptimizer:
                 mean_d = get_pymc_distribution("mean_d", self.gp_mean_prior_def)
 
                 # --- GP Covariance Function ---
-                # Pass ell using the 'ls' keyword argument
                 # FIX: Wrap ell + 1e-9 in pt.as_tensor_variable to ensure correct handling
+                if ell is None:
+                    raise ValueError("Lengthscale 'ell' cannot be None. Check the prior definition.")
+                if eta is None:
+                    raise ValueError("Amplitude 'eta' cannot be None. Check the prior definition.")
                 cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
 
                 # --- GP Definition ---
@@ -546,6 +551,8 @@ class PathIntegralOptimizer:
             cost=cost,
             benefit=benefit
         )
+
+        logger.info('Building model from input data')
         # ParameterEstimator returns ParameterEstimationResult which contains
         # {'mu': ..., 'sigma': ...} for each estimated parameter.
         parameters:ParameterEstimationResult=ParameterEstimator(data) \
@@ -585,7 +592,6 @@ class PathIntegralOptimizer:
             'mu': parameters.gp_mean_prior['mu'],
             'sigma': parameters.gp_mean_prior['sigma']
         }
-
 
         # Pass the constructed prior dictionaries to the constructor
         return PathIntegralOptimizer(
