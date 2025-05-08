@@ -293,8 +293,9 @@ class PathIntegralOptimizer:
                 mean_d = get_pymc_distribution("mean_d", self.gp_mean_prior_def)
 
                 # --- GP Covariance Function ---
-                # FIX: Pass ell using the 'ls' keyword argument
-                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=ell) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
+                # Pass ell using the 'ls' keyword argument
+                # FIX: Wrap ell + 1e-9 in pt.as_tensor_variable to ensure correct handling
+                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
 
                 # --- GP Definition ---
                 X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
