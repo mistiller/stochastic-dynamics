@@ -9,7 +9,7 @@ import arviz as az
 
 # Assuming PathIntegralOptimizerResult will be updated to handle posterior summaries
 from path_integral_optimizer_result import PathIntegralOptimizerResult
-from .parameter_estimator import ParameterEstimationResult
+from .parameter_estimation_result import ParameterEstimationResult
 
 # Helper function to create PyMC distributions from dict descriptions
 def get_pymc_distribution(name: str, prior_info: Dict[str, Any]):
