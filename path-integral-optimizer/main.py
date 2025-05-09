@@ -18,7 +18,16 @@ def main():
 
     # SyntheticDataset generates (t, input, cost, benefit)
     # These are considered historical data for the optimizer
-    t_hist, input_hist, cost_hist, benefit_hist = SyntheticDataset(T=12).generate().arrays()
+    # Use the same total_resource for synthetic data generation
+    # Define sensible defaults for scale_benefit and d_t_value for synthetic data
+    synthetic_scale_benefit = 0.7 
+    synthetic_d_t_value = 1.1 
+    t_hist, input_hist, cost_hist, benefit_hist = SyntheticDataset(
+        T=12,
+        total_resource=total_resource,
+        scale_benefit=synthetic_scale_benefit,
+        d_t_value=synthetic_d_t_value
+    ).generate().arrays()
         
     optimizer: PathIntegralOptimizer = PathIntegralOptimizer.from_data(
         input=input_hist,
