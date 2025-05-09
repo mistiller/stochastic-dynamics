@@ -157,7 +157,9 @@ class PathIntegralOptimizer:
                  T: int,
                  hbar: float,
                  num_steps: int,
-                 burn_in: int) -> None:
+                 burn_in: int,
+                 historical_t: Optional[np.ndarray] = None,
+                 historical_input: Optional[np.ndarray] = None) -> None:
         """Initializes the PathIntegralOptimizer.
 
         Args:
@@ -171,10 +173,12 @@ class PathIntegralOptimizer:
             gp_ell_prior (Dict): Prior for GP lengthscale 'ell'. Ex: {"dist": "Gamma", "alpha": 5, "beta": 1} or {"dist": "Gamma", "mu": 5, "sigma": 5}
             gp_mean_prior (Dict): Prior for GP mean 'mean_d'. Ex: {"dist": "Normal", "mu": 2, "sigma": 0.5}
             total_resource (float): Fixed total resource.
-            T (int): Fixed number of time steps.
+            T (int): Fixed number of time steps for the optimization horizon (historical + forecast).
             hbar (float): Fixed noise parameter.
             num_steps (int): Number of MCMC steps.
             burn_in (int): Number of burn-in steps.
+            historical_t (Optional[np.ndarray]): Time steps of the historical input data.
+            historical_input (Optional[np.ndarray]): Values of the historical input data.
         """
         # Validate that all required prior definitions are dictionaries with 'dist'
         if not isinstance(base_cost_prior, Dict) or 'dist' not in base_cost_prior:
