@@ -267,12 +267,24 @@ This exploration has charted a course from classical optimization techniques for
 
 **Limitations and Challenges:**
 
-*   **Computational Cost:** MCMC sampling, especially for high-dimensional path spaces (e.g., many time steps $T$) and complex action functionals, can be computationally intensive, requiring significant sampling effort for convergence (Gilks et al., 1996).
+*   **Dimensionality Scaling:** While MCMC handles moderate-dimensional spaces (T ≤ 12 in our implementation), the O(N²) complexity of Gaussian Process covariance matrices becomes prohibitive for long-term planning horizons (T > 50) (Rasmussen & Williams, 2006).
+*   **Non-Convex Landscapes:** The path integral formulation assumes smooth action functionals, but real-world resource allocation often involves discontinuous constraints (e.g., minimum allocation thresholds) that create non-convexities (Boyd & Vandenberghe, 2004).
+*   **Thermodynamic Limit Assumptions:** The $\hbar \to 0$ classical limit presumes well-separated timescales between parameter fluctuations and decision intervals, which may not hold in rapidly changing markets (Zinn-Justin, 2002).
+*   **Observation Overhead:** Incorporating real-time data updates requires recomputing the entire path posterior rather than incremental updates, unlike recursive Bayesian filters (Gardiner, 2009).
 *   **Implementation Complexity:** Formulating the action functional, defining appropriate priors (including for GPs), and implementing an efficient MCMC sampler (like HMC with NUTS) requires specialized knowledge.
-*   **Parameter Tuning:** The "effective Planck constant" $\hbar$ acts as a crucial parameter influencing the scale of fluctuations. Its optimal setting might require careful tuning or calibration specific to the problem domain.
-*   **Prior Sensitivity:** As with all Bayesian methods, the results can be sensitive to the choice of prior distributions, especially when data is sparse or the likelihood surface is flat.
+*   **Prior-Data Balance:** The Bayesian framework's performance degrades when strong priors (e.g., GP hyperpriors) dominate sparse temporal observations, potentially biasing allocations (Robert & Casella, 2004).
 
-**Comparison with Alternative Stochastic Optimizers (e.g., Particle Swarm Optimization - PSO):**
+**Comparison with Alternative Optimization Paradigms:**
+
+| Method              | Uncertainty Handling          | Constraint Management       | Temporal Correlation | Computational Scaling |
+|---------------------|-------------------------------|-----------------------------|----------------------|-----------------------|
+| Path Integral MCMC  | Full Bayesian posterior       | Soft constraints via $\hbar$| GP priors            | O(T²) - O(T³)         |
+| Stochastic PSO      | Ensemble point estimates      | Hard constraint penalties   | None native          | O(N·T)                |
+| ADAM Optimizer      | Gradient variance estimation  | Projection methods          | RNN/LSTM models      | O(T)                  |
+| Genetic Algorithms  | Population diversity          | Repair operators            | Crossover schemes    | O(N²·T)               |
+| SQP Methods         | Chance constraints            | Active set management       | Euler discretization | O(T³)                 |
+
+Key tradeoffs emerge in solution fidelity versus computational overhead. Gradient-based methods (ADAM, SQP) excel in speed but struggle with multi-modal posteriors. Evolutionary algorithms (PSO, GA) maintain population diversity but lack proper uncertainty quantification. Our path integral approach provides measure-theoretic guarantees at higher computational cost - a manifestation of the Bellman tradeoff curse in stochastic optimization (Bertsekas, 1999).
 
 The path integral approach offers a distinct alternative to other stochastic optimization algorithms like Particle Swarm Optimization (PSO). PSO, as available in libraries like `stochopy` (Stochopy Documentation, n.d.), is a population-based method where particles adjust their trajectories based on their own best-known positions and the best-known positions of the entire swarm, governed by parameters like `inertia`, `cognitivity`, and `sociability`.
 
@@ -292,7 +304,9 @@ The path integral approach offers a distinct alternative to other stochastic opt
     *   **Path Integral (MCMC):** Sequential sampling, though chains can be parallelized. HMC leverages gradient information for efficient exploration.
     *   **PSO:** Population-based, inherently parallelizable (as `stochopy` supports via `workers` and `backend` options like 'loky' or 'threading' (Stochopy Documentation, n.d.)). It's a gradient-free method.
 
-While PSO might offer faster convergence to a good solution for some problems due to its direct search mechanism and parallelizability, the Bayesian path integral approach provides a more comprehensive characterization of uncertainty and the solution space, which is invaluable when robustness and detailed probabilistic insights are paramount.
+The path integral framework's strength lies in unifying several aspects of optimization under uncertainty: (1) Bayesian belief updating through the likelihood potential, (2) non-parametric temporal correlation via GP priors, and (3) thermodynamic-inspired exploration/exploitation balancing through $\hbar$ tuning. This contrasts with traditional methods that typically address these aspects separately through ad hoc regularization or post-hoc uncertainty quantification (Robert & Casella, 2004; Rasmussen & Williams, 2006).
+
+Recent advances in variational inference (Blei et al., 2017) suggest promising directions for approximating the path integral at reduced computational cost, potentially bridging the gap between sampling-based and gradient-based approaches. Similarly, quantum-inspired tensor network methods (Cichocki et al., 2016) could offer compressed representations of the allocation path space while preserving entanglement structures in temporal correlations.
 
 Future research may extend this path integral framework to multiscale models using techniques inspired by renormalization group theory, or explore the potential of quantum computing and quantum annealing for tackling the high-dimensional summations and integrations inherent in these approaches, especially for larger $T$ or more complex field interactions.
 
