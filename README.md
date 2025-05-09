@@ -17,29 +17,35 @@ uv pip install -r requirements.txt --all-extras
 
 ## Core Components
 
-### ParameterEstimator Class
+### Bayesian Parameter Estimator
 
-Key methods:
-- `run_mcmc()`: Estimates parameters from historical data using MCMC
+The `ParameterEstimator` class implements hierarchical Bayesian inference using PyMC:
+
+Key features:
+- Gaussian Process priors for time-varying parameters
+- Hamiltonian Monte Carlo (HMC) with NUTS sampling
+- Automatic convergence diagnostics (R-hat, ESS)
 - Returns `ParameterEstimationResult` with:
-  - Estimated parameters for cost/benefit functions
-  - GP hyperparameters
-  - Full MCMC trace data
+  - Posterior distributions for all parameters
+  - GP hyperparameters (η, ℓ) 
+  - MCMC trace with 4 chains × 2000 draws (1000 tune)
 
-### PathIntegralOptimizer Class
+### Path Integral Optimizer
+
+The `PathIntegralOptimizer` class implements the quantum-inspired stochastic optimization:
 
 Key initialization parameters:
 ```python
 PathIntegralOptimizer(
-    base_benefit: Dict[str, Any],      # Prior for baseline benefit distribution
-    scale_benefit: Dict[str, Any],     # Prior for benefit scaling factor
-    gp_eta_prior: Dict[str, Any],      # GP magnitude prior (η)
-    gp_ell_prior: Dict[str, Any],      # GP length scale prior (ℓ)
-    gp_mean_prior: Dict[str, Any],     # GP mean function prior
-    base_cost: float,                  # Fixed cost parameter
-    total_resource: float,             # Total resources available (∫x(t)dt ≤ X)
-    T: int,                            # Time horizon
-    hbar: float = 1.0                  # Effective Planck constant
+    base_cost_prior: Dict[str, Any],   # Prior for base_cost ~ p(base_cost)
+    base_benefit_prior: Dict[str, Any],# Prior for base_benefit ~ p(base_benefit) 
+    scale_benefit_prior: Dict[str, Any], # Prior for benefit scaling exponent
+    gp_eta_prior: Dict[str, Any],      # GP magnitude prior η ~ HalfNormal(σ=1)
+    gp_ell_prior: Dict[str, Any],      # GP length scale prior ℓ ~ Gamma(α=2, β=1)
+    gp_mean_prior: Dict[str, Any],     # GP mean function μ ~ Normal(μ=1, σ=0.5)
+    total_resource: float,             # Total resource constraint Σx(t) ≤ S
+    T: int,                            # Time horizon (12 for monthly planning)
+    hbar: float = 0.5                  # Planck constant (0.1-1.0 for exploration)
 )
 ```
 
@@ -54,22 +60,22 @@ Key methods:
 
 ## Theoretical Framework
 
-### The Optimization Challenge
-We consider stochastic optimal control problems where we aim to maximize:
+### Stochastic Optimal Control Formulation
+We maximize the expected utility under uncertainty:
 
 ```math
-𝔼[∫₀ᴛ (B(x(t),θ) - C(x(t))) dt]
+𝔼_{θ∼p(⋅)} \left[ \sum_{t=1}^T \left( \text{base\_benefit} \cdot x(t)^{\text{scale\_benefit}} - \text{base\_cost} \cdot x(t)^{d(t)} \right) \right]
 ```
 
 Subject to:
 ```math
-∫₀ᴛ x(t) dt ≤ X_{total},  x(t) ≥ 0
+\sum_{t=1}^T x(t) \leq S, \quad x(t) \geq 0\ \forall t
 ```
 
 Where:
-- `B(x(t),θ)` is a benefit function with uncertain parameters θ
-- `C(x(t))` is a convex cost function
-- `X_total` is a total resource budget
+- `d(t) ∼ GP(μ(t), k(η, ℓ))` follows a Gaussian Process
+- `base_cost`, `base_benefit`, `scale_benefit` have Bayesian priors
+- `S` is the total resource budget
 
 ### Traditional Approaches vs Path Integral Method
 Classical methods (Pontryagin's maximum principle, dynamic programming) struggle with:
@@ -95,19 +101,26 @@ Where the Lagrangian `L` incorporates:
 - System dynamics through `ẋ(t)` terms
 - GP temporal correlations via kernel matrices
 
-### Path Integral & MCMC Connection
-We compute the optimal path distribution:
+### Path Integral Implementation
+The quantum-stochastic duality is implemented through:
 
 ```math
-P[x(t)] ∝ exp(-S[x(t)]/ħ)
+P[x(t)] propto \exp\left(-\frac{1}{\hbar} \left[\sum_{t=1}^T \left(\frac{\text{base\_cost}\ x(t)^{d(t)}}{d(t)} - \frac{\text{base\_benefit}\ x(t)^{\text{scale\_benefit}}}{\text{scale\_benefit}}\right) + \frac{1}{2}\mathbf{x}^\top K^{-1}\mathbf{x}\right]\right)
 ```
 
-Sampled via MCMC where:
-- Each chain represents a candidate path x(t)
-- The action S[x(t)] acts as negative log-probability
-- ħ controls exploration/exploitation tradeoff:
-  - Small ħ: Focus on minimal-action paths (classical regime)
-  - Larger ħ: Explore stochastic variations (quantum regime)
+Where:
+- `K` is the GP covariance matrix with parameters (η, ℓ)
+- The action functional combines economic utility and temporal correlation
+- Implemented in PyMC as:
+
+```python
+with pm.Model():
+    d_t = pm.gp.Latent(mean_func=gp_mean, cov_func=eta**2 * pm.gp.cov.ExpQuad(1, ell))
+    action = pm.Potential("action", 
+        -(benefit_terms - cost_terms - 0.5 * x.T @ gp_cov @ x) / hbar
+    )
+    trace = pm.sample(draws=2000, tune=1000, chains=4, target_accept=0.95)
+```
 
 This enables efficient exploration of:
 - Discontinuous solution spaces
