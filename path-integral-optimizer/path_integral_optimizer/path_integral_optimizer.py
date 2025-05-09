@@ -615,7 +615,10 @@ class PathIntegralOptimizer:
         forecast_steps: int,
         t:Optional[np.array]=None
         ):
-        _t_hist=t or np.arange(1, len(input)+1)
+        if t is None:
+            _t_hist = np.arange(1, len(input) + 1)
+        else:
+            _t_hist = t
         optimizer_T = len(_t_hist) + forecast_steps
 
         data:Dataset=Dataset(
