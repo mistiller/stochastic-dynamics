@@ -113,13 +113,35 @@ $$\frac{\partial \rho}{\partial t} = -\frac{\partial}{\partial x} \left[ \left( 
 
 (Risken, 1996; Gardiner, 2009).
 
-### 5.3 Quantum Analogy
+### 5.3 Quantum-Stochastic Duality
 
-The quantum-inspired representation:
+The parameter $\hbar$ plays a dual role as both:
+1. A fluctuation scale parameter quantifying exploration-exploitation tradeoff
+2. A dimensional constant enabling mathematical isomorphism between stochastic dynamics and quantum mechanics
 
-$$\Psi(x, t) = \int \mathcal{D}[x(t)] \, e^{i S[x(t)] / \hbar}$$
+The path integral formulation admits a Wick rotation to imaginary time ($it \to \tau$) transforming the Schrödinger equation into a Fokker-Planck equation [1]:
 
-results in a Schrödinger-type equation for $\Psi$ (Feynman & Hibbs, 1965).
+$$\frac{\partial \rho}{\partial \tau} = -\nabla\cdot(\mu\rho) + \hbar\nabla^2\rho$$
+
+where $\rho(x,\tau) = |\Psi(x,\tau)|^2$ becomes the probability density. This transformation reveals:
+
+$$\underbrace{\text{Quantum System}}_{iS/\hbar} \xleftrightarrow{\text{Wick Rotation}} \underbrace{\text{Stochastic Process}}_{-S/\hbar}$$
+
+The dimensionless ratio $S/\hbar$ determines the dominance of:
+- Classical paths ($S \gg \hbar$): Minimum action dominates
+- Quantum fluctuations ($S \sim \hbar$): Multiple paths contribute
+
+In our resource optimization context, $\hbar$ acts as an "uncertainty temperature" regulating exploration strength [2]. Large $\hbar$ values permit greater path deviations to escape local optima, while $\hbar \to 0$ recovers deterministic gradient flow.
+
+The Schrödinger-type equation for $\Psi$ emerges from requiring path integral continuity [3]:
+
+$$i\hbar\frac{\partial \Psi}{\partial t} = \left(-\frac{\hbar^2}{2}\nabla^2 + V(x)\right)\Psi$$
+
+where the potential $V(x)$ encodes both optimization objectives and constraints through $V(x) \propto -Q(x) + \lambda\cdot\text{constraints}$.
+
+[1] Risken, H. (1996). The Fokker-Planck Equation. Springer, 2nd ed.  
+[2] Chaichian, M., & Demichev, A. (2001). Path Integrals in Physics. CRC Press.  
+[3] Zinn-Justin, J. (2002). Quantum Field Theory and Critical Phenomena. Oxford University Press.
 
 ---
 
