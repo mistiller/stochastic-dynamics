@@ -13,7 +13,7 @@ def main():
     hbar: float = 0.1
     num_steps: int = 1000  # Reduced for testing
     burn_in: int = 1000     # Reduced for testing
-    forecast_steps: int = 5 # Number of steps to forecast beyond historical data
+    optimization_horizon: int = 12 # Optimizer will run for this many time periods for the forecast
     total_resource: float = 100.0 # Example total resource
 
     # SyntheticDataset generates (t, input, cost, benefit)
@@ -29,7 +29,7 @@ def main():
         hbar=hbar,
         num_steps=num_steps,
         burn_in=burn_in,
-        forecast_steps=forecast_steps
+        forecast_steps=optimization_horizon # Pass the new variable name
     )
 
     optimizer.run_mcmc()

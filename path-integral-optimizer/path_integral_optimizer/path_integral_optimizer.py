@@ -173,7 +173,7 @@ class PathIntegralOptimizer:
             gp_ell_prior (Dict): Prior for GP lengthscale 'ell'. Ex: {"dist": "Gamma", "alpha": 5, "beta": 1} or {"dist": "Gamma", "mu": 5, "sigma": 5}
             gp_mean_prior (Dict): Prior for GP mean 'mean_d'. Ex: {"dist": "Normal", "mu": 2, "sigma": 0.5}
             total_resource (float): Fixed total resource.
-            T (int): Fixed number of time steps for the optimization horizon (historical + forecast).
+            T (int): Fixed number of time steps for the optimization/forecast horizon.
             hbar (float): Fixed noise parameter.
             num_steps (int): Number of MCMC steps.
             burn_in (int): Number of burn-in steps.
@@ -554,10 +554,11 @@ class PathIntegralOptimizer:
         if self.mcmc_paths is None:
             logger.warning("MCMC paths not available. Run run_mcmc() first. Cannot plot forecast.")
             return
-        if self.T is None or len(self.historical_t) >= self.T :
-            logger.warning("No forecast steps available (T <= historical length). Cannot plot forecast.")
+        # self.T is the length of the forecast period.
+        # We need historical data and a forecast period > 0 to plot.
+        if self.T is None or self.T <= 0:
+            logger.warning("No forecast period defined (T <= 0). Cannot plot forecast.")
             return
-
 
         try:
             plt.figure(figsize=(12, 7))
@@ -565,26 +566,25 @@ class PathIntegralOptimizer:
             # Plot historical data
             plt.plot(self.historical_t, self.historical_input, label="Historical Input", color='blue', marker='o', linestyle='-')
 
-            # Calculate mean of optimized paths (this covers the full T horizon)
-            mean_optimized_path = np.mean(self.mcmc_paths, axis=0)
-
-            num_historical_points = len(self.historical_t)
-            forecast_segment = mean_optimized_path[num_historical_points:]
+            # mean_optimized_path is the forecast, with length self.T
+            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
             
             # Create time axis for the forecast segment
-            # Assuming historical_t are integers and regularly spaced (e.g., step of 1)
+            # It starts after the last historical time point.
             last_historical_time = self.historical_t[-1]
-            # Determine step from historical data if possible, otherwise assume 1
+            # Determine time step from historical data if possible, otherwise assume 1
             time_step = 1
-            if num_historical_points > 1:
+            if len(self.historical_t) > 1:
                 time_step = self.historical_t[1] - self.historical_t[0]
+            
+            # The forecast_time_axis starts from the step after last_historical_time
+            # and runs for self.T (length of mean_forecast_path) steps.
+            forecast_time_axis = last_historical_time + np.arange(1, len(mean_forecast_path) + 1) * time_step
 
-            forecast_time_axis = last_historical_time + np.arange(1, len(forecast_segment) + 1) * time_step
+            # Plot forecasted data (which is the entire mean_forecast_path)
+            plt.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input", color='red', marker='x', linestyle='--')
 
-            # Plot forecasted data
-            plt.plot(forecast_time_axis, forecast_segment, label="Mean Forecasted Input", color='red', marker='x', linestyle='--')
-
-            # Add a vertical line at the end of historical data
+            # Add a vertical line at the end of historical data / start of forecast
             plt.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2, label="Forecast Horizon Start")
 
             plt.xlabel("Time (t)")
@@ -619,7 +619,8 @@ class PathIntegralOptimizer:
             _t_hist = np.arange(1, len(input) + 1)
         else:
             _t_hist = t
-        optimizer_T = len(_t_hist) + forecast_steps
+        # optimizer_T is the length of the forecast period itself
+        optimizer_T = forecast_steps 
 
         data:Dataset=Dataset(
             t=_t_hist,
