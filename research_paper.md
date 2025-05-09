@@ -39,17 +39,40 @@ This balances marginal benefit against marginal cost at each time $t$ (Bertsekas
 
 $$\text{Maximize } \sum_{t=1}^{12} \left[ a x(t)^b - c x(t)^{d(t)} \right] \quad \text{subject to } \sum_{t=1}^{12} x(t) \leq S$$
 
-### 2.2 Lagrangian Duality
+### 2.2 Lagrangian Duality and Shadow Price Analysis
 
-The Lagrangian is:
+The Lagrangian formulation bridges economic optimization with physical field theory through dual interpretations of the multiplier $\lambda$:
 
 $$\mathcal{L} = \sum_{t=1}^{12} \left[ a x(t)^b - c x(t)^{d(t)} \right] - \lambda \left( \sum_{t=1}^{12} x(t) - S \right)$$
 
-First-order conditions:
+#### Economic Interpretation (KKT Conditions)
+The Karush-Kuhn-Tucker conditions reveal the shadow price's limitations:
 
-$$a b x(t)^{b-1} - c d(t) x(t)^{d(t)-1} = \lambda \quad \forall t$$
+1. **Stationarity**:
+$$ \frac{\partial\mathcal{L}}{\partial x(t)} = a b x(t)^{b-1} - c d(t) x(t)^{d(t)-1} - \lambda = 0 \quad \forall t $$
 
-This implies that the marginal benefit equals the shadow price $\lambda$ across all time periods (Boyd & Vandenberghe, 2004; Rardin, 2017).
+2. **Primal Feasibility**:
+$$ \sum_{t=1}^{12} x(t) \leq S $$
+
+3. **Dual Feasibility**:
+$$ \lambda \geq 0 $$
+
+4. **Complementary Slackness**:
+$$ \lambda \left( \sum_{t=1}^{12} x(t) - S \right) = 0 $$
+
+The shadow price $\lambda$ only reflects marginal utility of resources when the constraint binds ($\sum x(t) = S$). If resources are under-utilized ($\sum x(t) < S$), complementary slackness forces $\lambda=0$, collapsing the economic interpretation (Boyd & Vandenberghe, 2004; Rardin, 2017).
+
+#### Physical Field Theory Analogy
+The Lagrangian density $\mathcal{L}$ appears in both contexts but with different interpretations:
+
+| Economic System               | Physical System             |
+|-------------------------------|-----------------------------|
+| Resource allocation $\vec{x}$ | Field configuration $\phi(x)$ |
+| Shadow price $\lambda$        | Conjugate momentum $\pi(x)$ |
+| KKT conditions                | Euler-Lagrange equations    |
+| Primal feasibility            | Kinematic constraints       |
+
+This isomorphism allows applying path integral methods from quantum field theory to stochastic optimization, where $\lambda$ becomes a dynamical field rather than a static multiplier (Zinn-Justin, 2002; Arnold, 1989).
 
 ---
 
@@ -85,13 +108,19 @@ $$ \frac{dQ}{dt} = \frac{\partial Q}{\partial t} + \frac{\partial Q}{\partial b}
 
 This enforces optimality along parameter trajectories (Arnold, 1989).
 
-### 4.2 Symplectic Structure
+### 4.2 Symplectic Structure and Economic-Physical Duality
 
-Hamiltonian dynamics are described by:
+The Hamiltonian formulation reveals deep connections between economic optimization and physical systems:
 
 $$\dot{x}(t) = \frac{\partial H}{\partial p}, \quad \dot{p}(t) = -\frac{\partial H}{\partial x}$$
 
-In static conditions, this formulation aligns with the original first-order conditions (Arnold, 1989).
+Where the economic conjugate momentum $p(t) \equiv \lambda(t)$ corresponds to the shadow price field. This symplectic structure preserves phase-space volume (Liouville's theorem), implying:
+
+1. **Uncertainty Preservation**: Perfect estimation of both resource allocations $x(t)$ and shadow prices $\lambda(t)$ is fundamentally limited
+2. **Stochastic Flows**: Resource reallocations generate intrinsic noise through the bracket $\{x,p\} = 1$
+3. **Thermodynamic Analog**: The path integral $Z = \int \mathcal{D}x\mathcal{D}p\ e^{-S/\hbar}$ suggests a thermodynamic limit where $\hbar \to 0$ recovers classical shadow pricing
+
+The duality breaks down when KKT constraints become active, introducing non-holonomic conditions absent in fundamental physical laws (Arnold, 1989; Chaichian & Demichev, 2001).
 
 ---
 
