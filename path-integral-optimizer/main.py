@@ -13,20 +13,28 @@ def main():
     hbar: float = 0.1
     num_steps: int = 1000  # Reduced for testing
     burn_in: int = 1000     # Reduced for testing
+    forecast_steps: int = 5 # Number of steps to forecast beyond historical data
+    total_resource: float = 100.0 # Example total resource
 
-    data:tuple[np.array]=SyntheticDataset() \
-        .generate() \
-        .arrays()
+    # SyntheticDataset generates (t, input, cost, benefit)
+    # These are considered historical data for the optimizer
+    t_hist, input_hist, cost_hist, benefit_hist = SyntheticDataset(T=12).generate().arrays()
         
-    optimizer: PathIntegralOptimizer=PathIntegralOptimizer.from_data(
-        *data,
-        hbar,
-        num_steps,
-        burn_in
+    optimizer: PathIntegralOptimizer = PathIntegralOptimizer.from_data(
+        input=input_hist,
+        cost=cost_hist,
+        benefit=benefit_hist,
+        t=t_hist,
+        total_resource=total_resource,
+        hbar=hbar,
+        num_steps=num_steps,
+        burn_in=burn_in,
+        forecast_steps=forecast_steps
     )
 
     optimizer.run_mcmc()
-    optimizer.plot()
+    optimizer.plot() # Original plot of MCMC paths
+    optimizer.plot_forecast() # New plot showing historical + forecast
     summary_result = optimizer.generate_summary()
 
     if summary_result:

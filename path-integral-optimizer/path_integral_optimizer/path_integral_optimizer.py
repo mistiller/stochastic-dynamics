@@ -205,6 +205,8 @@ class PathIntegralOptimizer:
         self.hbar: float = hbar
         self.num_steps: int = num_steps
         self.burn_in: int = burn_in
+        self.historical_t: Optional[np.ndarray] = historical_t
+        self.historical_input: Optional[np.ndarray] = historical_input
 
         # Initialize containers
         self.mcmc_paths: Optional[np.ndarray] = None  # Store all paths from trace later
@@ -533,6 +535,70 @@ class PathIntegralOptimizer:
             raise
         # return None # Ensure None is returned on exception path as well - already handled by re-raising
 
+    def plot_forecast(self, output_file: Optional[str] = None) -> None:
+        """
+        Plots the historical input data followed by the mean forecasted input data.
+        A vertical line indicates the transition from historical to forecasted data.
+
+        Args:
+            output_file (Optional[str]): If provided, saves the plot to this file.
+                                         Otherwise, shows the plot.
+        """
+        if self.historical_input is None or self.historical_t is None:
+            logger.warning("Historical data not available. Cannot plot forecast.")
+            return
+        if self.mcmc_paths is None:
+            logger.warning("MCMC paths not available. Run run_mcmc() first. Cannot plot forecast.")
+            return
+        if self.T is None or len(self.historical_t) >= self.T :
+            logger.warning("No forecast steps available (T <= historical length). Cannot plot forecast.")
+            return
+
+
+        try:
+            plt.figure(figsize=(12, 7))
+
+            # Plot historical data
+            plt.plot(self.historical_t, self.historical_input, label="Historical Input", color='blue', marker='o', linestyle='-')
+
+            # Calculate mean of optimized paths (this covers the full T horizon)
+            mean_optimized_path = np.mean(self.mcmc_paths, axis=0)
+
+            num_historical_points = len(self.historical_t)
+            forecast_segment = mean_optimized_path[num_historical_points:]
+            
+            # Create time axis for the forecast segment
+            # Assuming historical_t are integers and regularly spaced (e.g., step of 1)
+            last_historical_time = self.historical_t[-1]
+            # Determine step from historical data if possible, otherwise assume 1
+            time_step = 1
+            if num_historical_points > 1:
+                time_step = self.historical_t[1] - self.historical_t[0]
+
+            forecast_time_axis = last_historical_time + np.arange(1, len(forecast_segment) + 1) * time_step
+
+            # Plot forecasted data
+            plt.plot(forecast_time_axis, forecast_segment, label="Mean Forecasted Input", color='red', marker='x', linestyle='--')
+
+            # Add a vertical line at the end of historical data
+            plt.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2, label="Forecast Horizon Start")
+
+            plt.xlabel("Time (t)")
+            plt.ylabel("Input / Allocation (x(t))")
+            plt.title("Historical Input and Mean Forecasted Path")
+            plt.legend()
+            plt.grid(True)
+            
+            if output_file:
+                plt.savefig(output_file)
+                logger.info(f"Forecast plot saved to {output_file}")
+            else:
+                plt.show()
+
+        except Exception as e:
+            logger.exception(f"Error in plot_forecast: {e}")
+            # Do not re-raise, just log, so other operations can continue if needed.
+
     @staticmethod
     def from_data(
         input:np.array,
@@ -542,11 +608,14 @@ class PathIntegralOptimizer:
         hbar:float,
         num_steps:int,
         burn_in:int,
+        forecast_steps: int,
         t:Optional[np.array]=None
         ):
-        _t=t or np.arange(1, len(input)+1)
+        _t_hist=t or np.arange(1, len(input)+1)
+        optimizer_T = len(_t_hist) + forecast_steps
+
         data:Dataset=Dataset(
-            t=_t,
+            t=_t_hist,
             input=input,
             cost=cost,
             benefit=benefit
@@ -602,8 +671,10 @@ class PathIntegralOptimizer:
             gp_ell_prior=gp_ell_prior_dict,
             gp_mean_prior=gp_mean_prior_dict,
             total_resource=total_resource,
-            T=_t.max(),
+            T=optimizer_T,
             hbar=hbar,
             num_steps=num_steps,
-            burn_in=burn_in
+            burn_in=burn_in,
+            historical_t=_t_hist,
+            historical_input=input
         )
