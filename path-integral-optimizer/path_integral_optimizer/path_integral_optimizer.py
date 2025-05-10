@@ -629,8 +629,10 @@ class PathIntegralOptimizer:
                 forecast_cost = base_cost * mean_forecast_path ** d_t
                 
                 # Plot historical cost (if available)
-                if hasattr(self, 'historical_cost') and self.historical_cost is not None:
-                    ax2.plot(self.historical_t, self.historical_cost, 
+                if hasattr(self, 'historical_input') and hasattr(self, 'historical_t'):
+                    # Calculate historical cost using the same formula
+                    historical_cost = base_cost * self.historical_input ** d_t[:len(self.historical_input)]
+                    ax2.plot(self.historical_t, historical_cost, 
                             label="Historical Cost", color='green', marker='o', linestyle='-')
                 
                 # Plot forecasted cost
@@ -660,8 +662,10 @@ class PathIntegralOptimizer:
                 forecast_benefit = base_benefit * mean_forecast_path ** scale_benefit
                 
                 # Plot historical benefit (if available)
-                if hasattr(self, 'historical_benefit') and self.historical_benefit is not None:
-                    ax3.plot(self.historical_t, self.historical_benefit,
+                if hasattr(self, 'historical_input') and hasattr(self, 'historical_t'):
+                    # Calculate historical benefit using the same formula
+                    historical_benefit = base_benefit * self.historical_input ** scale_benefit
+                    ax3.plot(self.historical_t, historical_benefit,
                             label="Historical Benefit", color='orange', marker='o', linestyle='-')
                 
                 # Plot forecasted benefit
