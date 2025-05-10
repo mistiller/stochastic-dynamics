@@ -387,14 +387,18 @@ class PathIntegralOptimizer:
             self.actions = None
             raise # Re-raise the exception
 
-    def plot_top_paths(self, num_paths_to_plot: int = 10) -> None:
-        """Plots the top N paths based on lowest computed action (highest probability)."""
+    def plot_top_paths(self, top_percent: float = 5.0) -> None:
+        """Plots top paths based on lowest computed action and their mean.
+        
+        Args:
+            top_percent: Percentage of top paths to plot (default: 5%)
+        """
         if self.mcmc_paths is None or self.actions is None:
-             logger.warning("MCMC data not available. Run run_mcmc() first.")
-             return
+            logger.warning("MCMC data not available. Run run_mcmc() first.")
+            return
         if np.all(~np.isfinite(self.actions)):
-             logger.warning("No finite actions found. Cannot plot top paths.")
-             return
+            logger.warning("No finite actions found. Cannot plot top paths.")
+            return
 
         try:
             # Get indices of finite actions and sort them
@@ -405,58 +409,83 @@ class PathIntegralOptimizer:
 
             # Sort finite actions (ascending, lower action is better)
             sorted_finite_indices = finite_indices[np.argsort(self.actions[finite_indices])]
-            top_indices = sorted_finite_indices[:num_paths_to_plot]
+            
+            # Calculate number of top paths to plot based on percentage
+            num_top_paths = max(1, int(len(sorted_finite_indices) * top_percent / 100))
+            top_indices = sorted_finite_indices[:num_top_paths]
 
-            plt.figure(figsize=(10, 6))
-            for i, idx in enumerate(top_indices):
-                plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], label=f"Path {i+1} (Action: {self.actions[idx]:.2f})", alpha=0.7)
-
-            # Plot average path
-            average_path = np.mean(self.mcmc_paths, axis=0)
-            plt.plot(range(1, self.T + 1), average_path, label="Average Path", color='black', linewidth=2, linestyle='--')
-
+            plt.figure(figsize=(12, 7))
+            
+            # Plot all top paths with transparency
+            for idx in top_indices:
+                plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], color='blue', alpha=0.3)
+            
+            # Calculate and plot mean of top paths
+            top_paths = self.mcmc_paths[top_indices]
+            mean_top_path = np.mean(top_paths, axis=0)
+            plt.plot(range(1, self.T + 1), mean_top_path, label=f"Mean of Top {top_percent}% Paths",
+                    color='darkblue', linewidth=2, linestyle='--')
+            
             plt.xlabel("Time (t)")
             plt.ylabel("Allocation (x(t))")
-            plt.title(f"Top {num_paths_to_plot} MCMC Sampled Allocation Paths (Lowest Action)")
+            plt.title(f"Top {top_percent}% MCMC Sampled Allocation Paths (Lowest Action)\n(Showing {num_top_paths} paths in total)")
             plt.legend()
             plt.grid(True)
+            plt.tight_layout()
             plt.show()
+            
         except Exception as e:
             logger.exception(f"Error in plot_top_paths: {e}")
             raise
 
-    def plot(self) -> None:
-        """Plots generated paths with shaded quintiles and a dashed line for the mean path."""
-        if self.mcmc_paths is None:
-            logger.warning("No paths available. Run run_mcmc() first.")
+    def plot(self, top_percent: float = 5.0) -> None:
+        """Diagnostic plot showing distribution of action values with vertical line at mean of top paths.
+        
+        Args:
+            top_percent: Percentage of top paths to highlight (default: 5%)
+        """
+        if self.mcmc_paths is None or self.actions is None:
+            logger.warning("MCMC data not available. Run run_mcmc() first.")
+            return
+        if np.all(~np.isfinite(self.actions)):
+            logger.warning("No finite actions found. Cannot create diagnostic plot.")
             return
 
-        plt.figure(figsize=(10, 6))
-
-        # Calculate quintiles for shaded areas
-        quintiles = [20, 40, 60, 80]
-        colors = ['#1f77b4', '#1f77b4', '#1f77b4', '#1f77b4']  # Different shades of blue
-        alphas = [0.2, 0.3, 0.4, 0.3]  # Different transparency levels
-
-        # Plot shaded areas for each quintile
-        for i, quintile in enumerate(quintiles):
-            lower = np.percentile(self.mcmc_paths, quintile, axis=0)
-            upper = np.percentile(self.mcmc_paths, 100 - quintile, axis=0)
-            plt.fill_between(range(1, self.T + 1), lower, upper,
-                           color=colors[i], alpha=alphas[i],
-                           label=f'{quintile}% - {100-quintile}%')
-
-        # Calculate and plot mean path
-        mean_path = np.mean(self.mcmc_paths, axis=0)
-        plt.plot(range(1, 1 + self.T), mean_path, color='red',
-                linestyle='--', linewidth=2, label='Mean Path')
-
-        plt.xlabel("Time (t)")
-        plt.ylabel("Allocation (x(t))")
-        plt.title("Generated Paths with Quintiles and Mean Path")
-        plt.legend()
-        plt.grid(True)
-        plt.show()
+        try:
+            # Calculate number of top paths
+            finite_indices = np.where(np.isfinite(self.actions))[0]
+            if len(finite_indices) == 0:
+                logger.warning("No finite actions found. Cannot create diagnostic plot.")
+                return
+                
+            num_top_paths = max(1, int(len(finite_indices) * top_percent / 100))
+            sorted_indices = finite_indices[np.argsort(self.actions[finite_indices])]
+            top_indices = sorted_indices[:num_top_paths]
+            top_actions = self.actions[top_indices]
+            
+            # Create figure
+            plt.figure(figsize=(12, 7))
+            
+            # Plot KDE of all finite actions
+            az.plot_kde(self.actions[finite_indices], plot_kwargs={'color': 'lightblue'})
+            
+            # Add vertical line for mean of top paths
+            mean_top_action = np.mean(top_actions) if len(top_actions) > 0 else np.nan
+            if np.isfinite(mean_top_action):
+                plt.axvline(mean_top_action, color='darkblue', linestyle='--', linewidth=2,
+                          label=f'Mean Action of Top {top_percent}% Paths')
+            
+            plt.xlabel("Action Value")
+            plt.ylabel("Density")
+            plt.title(f"Distribution of Path Actions with Top {top_percent}% Highlight\n(Lower action = Higher probability)")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show()
+            
+        except Exception as e:
+            logger.exception(f"Error in plot: {e}")
+            raise
 
     def generate_summary(self) -> PathIntegralOptimizerResult | None:
         """Generates summary of the MCMC results.
@@ -541,9 +570,8 @@ class PathIntegralOptimizer:
 
     def plot_forecast(self, output_file: Optional[str] = None) -> None:
         """
-        Plots the historical input data followed by the mean forecasted input data.
-        A vertical line indicates the transition from historical to forecasted data.
-
+        Creates three subplots showing historical data and forecasts for input, cost, and benefit.
+        
         Args:
             output_file (Optional[str]): If provided, saves the plot to this file.
                                          Otherwise, shows the plot.
@@ -554,51 +582,110 @@ class PathIntegralOptimizer:
         if self.mcmc_paths is None:
             logger.warning("MCMC paths not available. Run run_mcmc() first. Cannot plot forecast.")
             return
-        # self.T is the length of the forecast period.
-        # We need historical data and a forecast period > 0 to plot.
         if self.T is None or self.T <= 0:
             logger.warning("No forecast period defined (T <= 0). Cannot plot forecast.")
             return
 
         try:
-            plt.figure(figsize=(12, 7))
-
-            # Plot historical data
-            plt.plot(self.historical_t, self.historical_input, label="Historical Input", color='blue', marker='o', linestyle='-')
-
-            # mean_optimized_path is the forecast, with length self.T
-            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
+            # Create figure with subplots
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 18))
             
-            # Create time axis for the forecast segment
-            # It starts after the last historical time point.
+            # Calculate time axis for forecast
             last_historical_time = self.historical_t[-1]
-            # Determine time step from historical data if possible, otherwise assume 1
             time_step = 1
             if len(self.historical_t) > 1:
                 time_step = self.historical_t[1] - self.historical_t[0]
+            forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
             
-            # The forecast_time_axis starts from the step after last_historical_time
-            # and runs for self.T (length of mean_forecast_path) steps.
-            forecast_time_axis = last_historical_time + np.arange(1, len(mean_forecast_path) + 1) * time_step
-
-            # Plot forecasted data (which is the entire mean_forecast_path)
-            plt.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input", color='red', marker='x', linestyle='--')
-
-            # Add a vertical line at the end of historical data / start of forecast
-            plt.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2, label="Forecast Horizon Start")
-
-            plt.xlabel("Time (t)")
-            plt.ylabel("Input / Allocation (x(t))")
-            plt.title("Historical Input and Mean Forecasted Path")
-            plt.legend()
-            plt.grid(True)
+            # Get mean forecast path
+            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
+            
+            # Plot input data
+            ax1.plot(self.historical_t, self.historical_input, label="Historical Input", 
+                    color='blue', marker='o', linestyle='-')
+            ax1.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input",
+                    color='red', marker='x', linestyle='--')
+            ax1.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                       label="Forecast Horizon Start")
+            ax1.set_xlabel("Time (t)")
+            ax1.set_ylabel("Allocation (x(t))")
+            ax1.set_title("Historical Input and Mean Forecasted Allocation")
+            ax1.legend()
+            ax1.grid(True)
+            
+            # Plot cost data
+            # Calculate cost from input using the model's parameters
+            if hasattr(self, 'base_cost') and hasattr(self, 'd_t'):
+                # If we have parameter samples, use the posterior means
+                try:
+                    base_cost = np.mean(self.trace.posterior["base_cost"].values)
+                    d_t = np.mean(self.trace.posterior["d_t"].values, axis=0)
+                except Exception:
+                    # Fallback to prior values if posterior samples aren't available
+                    base_cost = self.base_cost_prior_def.get('mu', 0.5)
+                    d_t = np.ones(self.T) * 2.0
+                
+                # Calculate forecasted cost
+                forecast_cost = base_cost * mean_forecast_path ** d_t
+                
+                # Plot historical cost (if available)
+                if hasattr(self, 'historical_cost') and self.historical_cost is not None:
+                    ax2.plot(self.historical_t, self.historical_cost, 
+                            label="Historical Cost", color='green', marker='o', linestyle='-')
+                
+                # Plot forecasted cost
+                ax2.plot(forecast_time_axis, forecast_cost,
+                        label="Forecasted Cost", color='darkgreen', marker='x', linestyle='--')
+            
+            ax2.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                       label="Forecast Horizon Start")
+            ax2.set_xlabel("Time (t)")
+            ax2.set_ylabel("Cost Value")
+            ax2.set_title("Historical and Forecasted Cost")
+            ax2.legend()
+            ax2.grid(True)
+            
+            # Plot benefit data
+            if hasattr(self, 'base_benefit') and hasattr(self, 'scale_benefit'):
+                # If we have parameter samples, use the posterior means
+                try:
+                    base_benefit = np.mean(self.trace.posterior["base_benefit"].values)
+                    scale_benefit = np.mean(self.trace.posterior["scale_benefit"].values)
+                except Exception:
+                    # Fallback to prior values if posterior samples aren't available
+                    base_benefit = self.base_benefit_prior_def.get('mu', 1.0)
+                    scale_benefit = self.scale_benefit_prior_def.get('mu', 0.5)
+                
+                # Calculate forecasted benefit
+                forecast_benefit = base_benefit * mean_forecast_path ** scale_benefit
+                
+                # Plot historical benefit (if available)
+                if hasattr(self, 'historical_benefit') and self.historical_benefit is not None:
+                    ax3.plot(self.historical_t, self.historical_benefit,
+                            label="Historical Benefit", color='orange', marker='o', linestyle='-')
+                
+                # Plot forecasted benefit
+                ax3.plot(forecast_time_axis, forecast_benefit,
+                        label="Forecasted Benefit", color='darkorange', marker='x', linestyle='--')
+            
+            ax3.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                       label="Forecast Horizon Start")
+            ax3.set_xlabel("Time (t)")
+            ax3.set_ylabel("Benefit Value")
+            ax3.set_title("Historical and Forecasted Benefit")
+            ax3.legend()
+            ax3.grid(True)
+            
+            # Add overall title and adjust layout
+            plt.suptitle("Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.95)
+            plt.tight_layout()
             
             if output_file:
                 plt.savefig(output_file)
                 logger.info(f"Forecast plot saved to {output_file}")
             else:
                 plt.show()
-
+                
         except Exception as e:
             logger.exception(f"Error in plot_forecast: {e}")
             # Do not re-raise, just log, so other operations can continue if needed.
