@@ -585,6 +585,9 @@ class PathIntegralOptimizer:
         if self.T is None or self.T <= 0:
             logger.warning("No forecast period defined (T <= 0). Cannot plot forecast.")
             return
+        if self.trace is None:
+             logger.warning("No MCMC trace available. Cannot calculate historical/forecasted cost/benefit.")
+             return
 
         try:
             # Create figure with subplots
@@ -614,35 +617,56 @@ class PathIntegralOptimizer:
             ax1.grid(True)
             
             # Plot cost data
-            # Calculate cost from input using the model's parameters
-            if hasattr(self, 'base_cost') and hasattr(self, 'd_t'):
-                # If we have parameter samples, use the posterior means
-                try:
-                    # Access posterior values correctly
-                    base_cost = self.trace.posterior["base_cost"].values.mean()
-                    d_t = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
-                except Exception as e:
-                    logger.warning(f"Could not access posterior samples for cost parameters: {e}")
-                    # Fallback to prior values if posterior samples aren't available
-                    base_cost = self.base_cost_prior_def.get('mu', 0.5)
-                    d_t = np.ones(self.T) * 2.0
-                
-                # Calculate forecasted cost
-                forecast_cost = base_cost * mean_forecast_path ** d_t
-                
-                # Plot historical cost (use historical_input and historical_t)
-                historical_cost = base_cost * self.historical_input ** d_t[:len(self.historical_input)]
-                ax2.plot(self.historical_t, historical_cost, 
-                        label="Historical Cost", color='green', marker='o', linestyle='-')
-                
+            try:
+                # Access posterior means for parameters
+                base_cost_mean = self.trace.posterior["base_cost"].values.mean()
+                base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
+                scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
+                # d_t is time-dependent, get the mean for each time step
+                d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
+
+                # Calculate historical cost and benefit using historical input and corresponding d_t values
+                # Need to align historical time steps with d_t indices.
+                # Assuming historical_t corresponds to the first len(historical_input) values of d_t_mean
+                if len(self.historical_input) > len(d_t_mean):
+                     logger.warning("Historical input length is greater than d_t length. Cannot calculate historical cost/benefit accurately.")
+                     historical_cost = np.full_like(self.historical_input, np.nan)
+                     historical_benefit = np.full_like(self.historical_input, np.nan)
+                else:
+                    historical_d_t = d_t_mean[:len(self.historical_input)]
+                    historical_cost = base_cost_mean * self.historical_input ** historical_d_t
+                    historical_benefit = base_benefit_mean * self.historical_input ** scale_benefit_mean
+
+                # Calculate forecasted cost and benefit using mean forecast path and remaining d_t values
+                forecast_d_t = d_t_mean[len(self.historical_input):]
+                if len(forecast_d_t) != len(mean_forecast_path):
+                     logger.warning("Forecast path length does not match remaining d_t length. Cannot calculate forecasted cost/benefit accurately.")
+                     forecast_cost = np.full_like(mean_forecast_path, np.nan)
+                     forecast_benefit = np.full_like(mean_forecast_path, np.nan)
+                else:
+                    forecast_cost = base_cost_mean * mean_forecast_path ** forecast_d_t
+                    forecast_benefit = base_benefit_mean * mean_forecast_path ** scale_benefit_mean
+
+                # Plot historical cost
+                ax2.plot(self.historical_t, historical_cost,
+                        label="Historical Cost (Estimated)", color='green', marker='o', linestyle='-')
+
                 # Plot forecasted cost
                 ax2.plot(forecast_time_axis, forecast_cost,
-                        label="Forecasted Cost", color='darkgreen', marker='x', linestyle='--')
-                
-                # Plot forecasted cost
-                ax2.plot(forecast_time_axis, forecast_cost,
-                        label="Forecasted Cost", color='darkgreen', marker='x', linestyle='--')
-            
+                        label="Forecasted Cost (Mean)", color='darkgreen', marker='x', linestyle='--')
+
+                # Plot historical benefit
+                ax3.plot(self.historical_t, historical_benefit,
+                        label="Historical Benefit (Estimated)", color='orange', marker='o', linestyle='-')
+
+                # Plot forecasted benefit
+                ax3.plot(forecast_time_axis, forecast_benefit,
+                        label="Forecasted Benefit (Mean)", color='darkorange', marker='x', linestyle='--')
+
+            except Exception as e:
+                logger.warning(f"Could not calculate and plot historical/forecasted cost/benefit: {e}")
+                # Continue plotting other elements even if cost/benefit fails
+
             ax2.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
                        label="Forecast Horizon Start")
             ax2.set_xlabel("Time (t)")
@@ -650,36 +674,7 @@ class PathIntegralOptimizer:
             ax2.set_title("Historical and Forecasted Cost")
             ax2.legend()
             ax2.grid(True)
-            
-            # Plot benefit data
-            if hasattr(self, 'base_benefit') and hasattr(self, 'scale_benefit'):
-                # If we have parameter samples, use the posterior means
-                try:
-                    # Access posterior values correctly
-                    base_benefit = self.trace.posterior["base_benefit"].values.mean()
-                    scale_benefit = self.trace.posterior["scale_benefit"].values.mean()
-                except Exception as e:
-                    logger.warning(f"Could not access posterior samples for benefit parameters: {e}")
-                    # Fallback to prior values if posterior samples aren't available
-                    base_benefit = self.base_benefit_prior_def.get('mu', 1.0)
-                    scale_benefit = self.scale_benefit_prior_def.get('mu', 0.5)
-                
-                # Calculate forecasted benefit
-                forecast_benefit = base_benefit * mean_forecast_path ** scale_benefit
-                
-                # Plot historical benefit (use historical_input and historical_t)
-                historical_benefit = base_benefit * self.historical_input ** scale_benefit
-                ax3.plot(self.historical_t, historical_benefit,
-                        label="Historical Benefit", color='orange', marker='o', linestyle='-')
-                
-                # Plot forecasted benefit
-                ax3.plot(forecast_time_axis, forecast_benefit,
-                        label="Forecasted Benefit", color='darkorange', marker='x', linestyle='--')
-                
-                # Plot forecasted benefit
-                ax3.plot(forecast_time_axis, forecast_benefit,
-                        label="Forecasted Benefit", color='darkorange', marker='x', linestyle='--')
-            
+
             ax3.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
                        label="Forecast Horizon Start")
             ax3.set_xlabel("Time (t)")
