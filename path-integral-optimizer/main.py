@@ -43,6 +43,7 @@ def main():
 
     optimizer.run_mcmc()
     optimizer.plot() # Original plot of MCMC paths
+    optimizer.plot_top_paths()
     optimizer.plot_forecast() # New plot showing historical + forecast
     summary_result = optimizer.generate_summary()
 
