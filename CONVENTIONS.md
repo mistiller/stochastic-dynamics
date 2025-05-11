@@ -26,9 +26,17 @@ PEP 257 provides conventions for docstrings, which are essential for documenting
     - For multi-line docstrings, the summary line is followed by a blank line, then a more detailed explanation.
 
 ### PEP 20: The Zen of Python
-PEP 20 provides guiding principles for writing computer programs that influence the design of Python.
+PEP 20, by Tim Peters, is a collection of 19 guiding principles for writing computer programs that influence the design of the Python language. You can view them by typing `import this` into a Python interpreter.
 - **Reference:** [PEP 20 -- The Zen of Python](https://peps.python.org/pep-0020/)
-- Typing `import this` in a Python interpreter will display it.
+- **Key Aphorisms Include:**
+    - Beautiful is better than ugly.
+    - Explicit is better than implicit.
+    - Simple is better than complex.
+    - Complex is better than complicated.
+    - Readability counts.
+    - There should be one-- and preferably only one --obvious way to do it.
+    - If the implementation is hard to explain, it's a bad idea.
+    - If the implementation is easy to explain, it may be a good idea.
 
 ### Type Hinting (PEP 484 and related)
 We use type hints to improve code clarity and for static analysis.
