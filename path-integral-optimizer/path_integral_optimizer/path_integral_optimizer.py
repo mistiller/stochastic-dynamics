@@ -1,144 +1,115 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 import pymc as pm
 from pytensor import tensor as pt
 from pytensor import config
 from loguru import logger
 import arviz as az
+from pydantic import BaseModel, Field, validator, root_validator
+from typing import Literal, Union
 
 # Assuming PathIntegralOptimizerResult will be updated to handle posterior summaries
-from .path_integral_optimizer_result import PathIntegralOptimizerResult
+from .path_integral_optimizer_result import PathIntegralOptimizerResult, ParameterSummary
 from .parameter_estimator import ParameterEstimator
 from .parameter_estimation_result import ParameterEstimationResult
 from .dataset import Dataset
 
-# Helper function to create PyMC distributions from dict descriptions
-def get_pymc_distribution(name: str, prior_info: Dict[str, Any])->pm.Distribution:
-    """
-    Creates a PyMC distribution based on a dictionary description.
-    Handles conversion from {'mu': ..., 'sigma': ...} to distribution-specific
-    parameters for common distributions like TruncatedNormal, Beta, HalfNormal, Gamma.
-    """
-    if not isinstance(prior_info, Dict) or "dist" not in prior_info:
-         raise ValueError(f"Prior info for '{name}' must be a dictionary with a 'dist' key. Got {prior_info}")
+# --- Pydantic Models for Prior Definitions ---
 
-    dist_name = prior_info["dist"]
-    params = {k: v for k, v in prior_info.items() if k != "dist"}
+class PriorDefinition(BaseModel):
+    """Base model for prior definitions."""
+    dist: str = Field(..., description="Name of the PyMC distribution")
+    # Allow arbitrary parameters for the distribution
+    params: Dict[str, Any] = Field(default_factory=dict, description="Parameters for the distribution")
 
-    try:
-        if dist_name == "TruncatedNormal":
-            # Expects mu, sigma, lower, upper. 'lower' is required for this use case.
-            mu = params.get("mu")
-            sigma = params.get("sigma")
-            lower = params.get("lower") # 'lower' is now expected in the dict
-            upper = params.get("upper", np.inf)
-            if mu is None or sigma is None or lower is None:
-                 raise ValueError(f"TruncatedNormal prior for {name} requires 'mu', 'sigma', and 'lower'. Got {prior_info}")
-            # Ensure sigma is positive
-            sigma = max(sigma, 1e-6)
-            return pm.TruncatedNormal(name, mu=mu, sigma=sigma, lower=lower, upper=upper)
+    @root_validator(pre=True)
+    def extract_dist_and_params(cls, values):
+        """Extract 'dist' and remaining keys as 'params'."""
+        if 'dist' not in values:
+            raise ValueError("Prior definition must contain a 'dist' key.")
+        dist_name = values.pop('dist')
+        return {'dist': dist_name, 'params': values}
 
-        elif dist_name == "Beta":
-            # Expects alpha, beta. Can convert from mu, sigma if provided.
-            if "alpha" in params and "beta" in params:
-                alpha = params["alpha"]
-                beta = params["beta"]
-            elif "mu" in params and "sigma" in params:
-                mu = params["mu"]
-                sigma = params["sigma"]
-                 # Ensure mu and sigma are provided for conversion
-                if mu is None or sigma is None:
-                     raise ValueError(f"Beta prior for {name} requires either 'alpha'/'beta' or 'mu'/'sigma'. Got {prior_info}")
-                # Convert mean/std to alpha/beta
-                # Ensure mu is within (0, 1) and sigma is valid
-                if not (0 < mu < 1):
-                     logger.warning(f"Mean {mu:.4f} for Beta prior '{name}' is not in (0, 1). Clamping.")
-                     mu = np.clip(mu, 1e-6, 1 - 1e-6)
-                variance = sigma**2
-                # Variance of Beta is mu*(1-mu)/(alpha+beta+1). Need variance < mu*(1-mu)
-                max_variance = mu * (1 - mu)
-                if variance >= max_variance:
-                     logger.warning(f"Variance {variance:.4f} for Beta prior '{name}' is too large for mean {mu:.4f}. Clamping variance.")
-                     variance = max_variance * 0.9 # Use 90% of max variance
+    def create_pymc_distribution(self, name: str) -> pm.Distribution:
+        """Creates a PyMC distribution based on this definition."""
+        try:
+            dist_class = getattr(pm, self.dist, None)
+            if dist_class is None:
+                raise ValueError(f"Unknown distribution name: {self.dist}")
 
-                # alpha+beta = mu*(1-mu)/variance - 1
-                sum_ab = mu * (1 - mu) / variance - 1
-                if sum_ab <= 0: # Should not happen if variance < mu*(1-mu)
-                     logger.warning(f"Calculated alpha+beta <= 0 for Beta prior '{name}'. Using default Beta(1,1).")
-                     alpha = 1.0
-                     beta = 1.0
+            # Special handling for distributions that can be defined by mu/sigma
+            if self.dist in ["Beta", "Gamma"]:
+                if "mu" in self.params and "sigma" in self.params:
+                    mu = self.params["mu"]
+                    sigma = self.params["sigma"]
+                    if mu is None or sigma is None:
+                         raise ValueError(f"{self.dist} prior for {name} requires either 'alpha'/'beta' or 'mu'/'sigma'. Got {self.params}")
+
+                    if self.dist == "Beta":
+                        # Convert mean/std to alpha/beta for Beta
+                        if not (0 < mu < 1):
+                            logger.warning(f"Mean {mu:.4f} for Beta prior '{name}' is not in (0, 1). Clamping.")
+                            mu = np.clip(mu, 1e-6, 1 - 1e-6)
+                        variance = sigma**2
+                        max_variance = mu * (1 - mu)
+                        if variance >= max_variance:
+                            logger.warning(f"Variance {variance:.4f} for Beta prior '{name}' is too large for mean {mu:.4f}. Clamping variance.")
+                            variance = max_variance * 0.9 # Use 90% of max variance
+
+                        sum_ab = mu * (1 - mu) / variance - 1
+                        if sum_ab <= 0:
+                            logger.warning(f"Calculated alpha+beta <= 0 for Beta prior '{name}'. Using default Beta(1,1).")
+                            alpha = 1.0
+                            beta = 1.0
+                        else:
+                            alpha = mu * sum_ab
+                            beta = (1 - mu) * sum_ab
+                        params = {'alpha': max(alpha, 1e-6), 'beta': max(beta, 1e-6)}
+                        logger.info(f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Beta(alpha={params['alpha']:.3f}, beta={params['beta']:.3f}) for '{name}'.")
+
+                    elif self.dist == "Gamma":
+                        # Convert mean/std to alpha/beta for Gamma
+                        variance = sigma**2
+                        if variance <= 0:
+                            logger.warning(f"Variance {variance:.4f} for Gamma prior '{name}' is non-positive. Using default Gamma(1,1).")
+                            alpha = 1.0
+                            beta = 1.0
+                        else:
+                            beta = mu / variance
+                            alpha = mu * beta
+                        params = {'alpha': max(alpha, 1e-6), 'beta': max(beta, 1e-6)}
+                        logger.info(f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Gamma(alpha={params['alpha']:.3f}, beta={params['beta']:.3f}) for '{name}'.")
                 else:
-                    alpha = mu * sum_ab
-                    beta = (1 - mu) * sum_ab
+                    # Use provided alpha/beta or other params directly
+                    params = self.params
 
-                # Ensure alpha, beta are positive
-                alpha = max(alpha, 1e-6)
-                beta = max(beta, 1e-6)
-                logger.info(f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Beta(alpha={alpha:.3f}, beta={beta:.3f}) for '{name}'.")
+            elif self.dist == "TruncatedNormal":
+                 # Ensure lower is present for this use case
+                 if 'lower' not in self.params:
+                      raise ValueError(f"TruncatedNormal prior for {name} requires 'lower'. Got {self.params}")
+                 params = self.params
+                 # Ensure sigma is positive
+                 if 'sigma' in params:
+                      params['sigma'] = max(params['sigma'], 1e-6)
+
+            elif self.dist in ["HalfNormal", "Normal"]:
+                 params = self.params
+                 # Ensure sigma is positive
+                 if 'sigma' in params:
+                      params['sigma'] = max(params['sigma'], 1e-6)
+
             else:
-                raise ValueError(f"Beta prior for {name} requires either 'alpha' and 'beta' or 'mu' and 'sigma'. Got {prior_info}")
-            return pm.Beta(name, alpha=alpha, beta=beta)
+                # For other distributions, use parameters directly
+                params = self.params
 
-        elif dist_name == "HalfNormal":
-            # Expects sigma.
-            if "sigma" in params:
-                sigma = params["sigma"]
-                # Ensure sigma is positive
-                sigma = max(sigma, 1e-6)
-                return pm.HalfNormal(name, sigma=sigma)
-            else:
-                 raise ValueError(f"HalfNormal prior for {name} requires 'sigma'. Got {prior_info}")
+            return dist_class(name, **params)
 
-        elif dist_name == "Gamma":
-            # Expects alpha, beta. Can convert from mu, sigma if provided.
-            if "alpha" in params and "beta" in params:
-                alpha = params["alpha"]
-                beta = params["beta"]
-            elif "mu" in params and "sigma" in params:
-                mu = params["mu"]
-                sigma = params["sigma"]
-                # Ensure mu and sigma are provided for conversion
-                if mu is None or sigma is None:
-                     raise ValueError(f"Gamma prior for {name} requires either 'alpha'/'beta' or 'mu'/'sigma'. Got {prior_info}")
-                # Convert mean/std to alpha/beta
-                # Mean = alpha/beta, Variance = alpha/beta^2
-                variance = sigma**2
-                if variance <= 0:
-                     logger.warning(f"Variance {variance:.4f} for Gamma prior '{name}' is non-positive. Using default Gamma(1,1).")
-                     alpha = 1.0
-                     beta = 1.0
-                else:
-                    beta = mu / variance
-                    alpha = mu * beta
-                # Ensure alpha, beta are positive
-                alpha = max(alpha, 1e-6)
-                beta = max(beta, 1e-6)
-                logger.info(f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Gamma(alpha={alpha:.3f}, beta={beta:.3f}) for '{name}'.")
+        except Exception as e:
+            logger.exception(f"Error creating PyMC distribution '{self.dist}' for '{name}' with params {self.params}: {e}")
+            raise
 
-                return pm.Gamma(name, alpha, beta)
-            else:
-                raise ValueError(f"Gamma prior for {name} requires either 'alpha' and 'beta' or 'mu' and 'sigma'. Got {prior_info}")
-
-        elif dist_name == "Normal":
-             # Expects mu, sigma.
-             mu = params.get("mu")
-             sigma = params.get("sigma")
-             if mu is None or sigma is None:
-                  raise ValueError(f"Normal prior for {name} requires 'mu' and 'sigma'. Got {prior_info}")
-             # Ensure sigma is positive
-             sigma = max(sigma, 1e-6)
-             return pm.Normal(name, mu=mu, sigma=sigma)
-
-        elif hasattr(pm, dist_name):
-            # Handle other distributions directly if parameters match
-            return getattr(pm, dist_name)(name, **params)
-        else:
-            raise ValueError(f"Unknown distribution name: {dist_name}")
-
-    except Exception as e:
-        logger.exception(f"Error creating PyMC distribution '{dist_name}' for '{name}' with params {params}: {e}")
-        raise
+# --- Main Optimizer Class ---
 
 class PathIntegralOptimizer:
     """
@@ -180,30 +151,30 @@ class PathIntegralOptimizer:
             historical_t (Optional[np.ndarray]): Time steps of the historical input data.
             historical_input (Optional[np.ndarray]): Values of the historical input data.
         """
-        # Validate that all required prior definitions are dictionaries with 'dist'
-        if not isinstance(base_cost_prior, Dict) or 'dist' not in base_cost_prior:
-             raise ValueError('base_cost_prior must be a dictionary with a "dist" key')
-        if not isinstance(base_benefit_prior, Dict) or 'dist' not in base_benefit_prior:
-             raise ValueError('base_benefit_prior has to be of type dict with a "dist" key')
-        if not isinstance(scale_benefit_prior, Dict) or 'dist' not in scale_benefit_prior:
-             raise ValueError('scale_benefit_prior has to be of type dict with a "dist" key')
-        if not isinstance(gp_eta_prior, Dict) or 'dist' not in gp_eta_prior:
-             raise ValueError('gp_eta_prior has to be of type dict with a "dist" key')
-        if not isinstance(gp_ell_prior, Dict) or 'dist' not in gp_ell_prior:
-             raise ValueError('gp_ell_prior has to be of type dict with a "dist" key')
-        if not isinstance(gp_mean_prior, Dict) or 'dist' not in gp_mean_prior:
-             raise ValueError('gp_mean_prior has to be of type dict with a "dist" key')
+        # Validate priors using Pydantic models
+        try:
+            self.base_cost_prior_def = PriorDefinition(**base_cost_prior)
+            self.base_benefit_prior_def = PriorDefinition(**base_benefit_prior)
+            self.scale_benefit_prior_def = PriorDefinition(**scale_benefit_prior)
+            self.gp_eta_prior_def = PriorDefinition(**gp_eta_prior)
+            self.gp_ell_prior_def = PriorDefinition(**gp_ell_prior)
+            self.gp_mean_prior_def = PriorDefinition(**gp_mean_prior)
+        except Exception as e:
+            logger.exception(f"Error validating prior definitions: {e}")
+            raise
 
-        #config.mode = 'JAX'  # very slow
+        # Validate historical data if provided
+        if historical_t is not None:
+            if not isinstance(historical_t, np.ndarray) or historical_t.ndim != 1:
+                raise ValueError("historical_t must be a 1D numpy array or None.")
+            if historical_input is None:
+                 raise ValueError("historical_input must be provided if historical_t is provided.")
+            if not isinstance(historical_input, np.ndarray) or historical_input.ndim != 1:
+                raise ValueError("historical_input must be a 1D numpy array or None.")
+            if len(historical_t) != len(historical_input):
+                raise ValueError("historical_t and historical_input must have the same length.")
 
-        # Store priors and fixed values
-        self.base_cost_prior_def: Dict[str, Any] = base_cost_prior
-        self.base_benefit_prior_def: Dict[str, Any] = base_benefit_prior
-        self.scale_benefit_prior_def: Dict[str, Any] = scale_benefit_prior
-        self.gp_eta_prior_def: Dict[str, Any] = gp_eta_prior
-        self.gp_ell_prior_def: Dict[str, Any] = gp_ell_prior
-        self.gp_mean_prior_def: Dict[str, Any] = gp_mean_prior
-
+        # Store fixed values and validated historical data
         self.total_resource: float = total_resource
         self.T: int = T
         self.hbar: float = hbar
@@ -219,69 +190,67 @@ class PathIntegralOptimizer:
 
     def compute_action(self,
                        x_path: pt.TensorVariable,
-                       base_cost: pt.TensorVariable, # base_cost is now a variable
+                       base_cost: pt.TensorVariable,
                        base_benefit: pt.TensorVariable,
                        scale_benefit: pt.TensorVariable,
                        d_t: pt.TensorVariable) -> pt.TensorVariable:
         """Computes the action using PyTensor, accepting parameters as variables."""
-        try:
-            # Use passed parameters
-            benefit = base_benefit * x_path ** scale_benefit
-            cost = base_cost * x_path ** d_t  # Use base_cost variable
-            return -pt.sum(benefit - cost)
-        except Exception as e:
-            logger.exception(f"Error in compute_action: {e}")
-            raise
+        # No change needed here, PyTensor handles symbolic computation
+        benefit = base_benefit * x_path ** scale_benefit
+        cost = base_cost * x_path ** d_t
+        return -pt.sum(benefit - cost)
 
     def _compute_action_numpy(self,
                              x_path: np.ndarray,
-                             base_cost: float, # base_cost is now a float argument
+                             base_cost: float,
                              base_benefit: float,
                              scale_benefit: float,
                              d_t: np.ndarray) -> float:
         """Computes the action using NumPy, accepting specific parameter values."""
         try:
-            # Ensure inputs are valid numbers
+            # Basic validation for inputs
             if not (np.isfinite(base_cost) and np.isfinite(base_benefit) and np.isfinite(scale_benefit)):
-                logger.warning(f"Non-finite parameter values passed: base_cost={base_cost}, base_benefit={base_benefit}, scale_benefit={scale_benefit}")
+                # logger.warning(f"Non-finite parameter values passed: base_cost={base_cost}, base_benefit={base_benefit}, scale_benefit={scale_benefit}")
                 return np.inf
 
-            # Add clipping/validation for base_cost
-            base_cost = np.clip(base_cost, a_min=1e-12, a_max=1e6) # Ensure positive and finite
-
-            x_path = np.clip(x_path, a_min=1e-12, a_max=1e6)  #Adjust min/max based on problem
+            # Add clipping/validation for parameters
+            base_cost = np.clip(base_cost, a_min=1e-12, a_max=1e6)
             base_benefit = np.clip(base_benefit, a_min=0.0, a_max=1e6)
-            scale_benefit = np.clip(scale_benefit, a_min=0.0, a_max=1.0) # scale_benefit is typically between 0 and 1
+            scale_benefit = np.clip(scale_benefit, a_min=0.0, a_max=1.0)
 
             # Ensure x_path has no non-positive values before exponentiation, esp. with scale_benefit<1
+            # Use a small epsilon for numerical stability if needed, but clipping might be better handled
+            # by ensuring the MCMC samples stay positive (e.g., through parameterization).
+            # For now, check and return inf if non-positive values are present.
             if np.any(x_path <= 0):
-                 logger.warning(f"Path contains non-positive values: {x_path}. Setting action to inf.")
-                 return np.inf
-            x_safe = x_path # Use directly if checks pass, or add epsilon if needed based on errors
+                 # logger.warning(f"Path contains non-positive values. Setting action to inf.")
+                 return np.inf # Return inf without logging for every sample
 
-            # Check for potential issues with scale_benefit < 1 and x near 0
-            benefit = base_benefit * np.power(x_safe + 1e-12, scale_benefit)
-            if not np.all(np.isfinite(benefit)):
-                logger.warning(f"Non-finite benefit values: {benefit}")
-                return np.inf
+            # Use a small epsilon for numerical stability in power calculation if needed
+            x_safe = x_path + 1e-12 # Add epsilon to avoid log(0) or 0^power issues
 
-            cost = base_cost * x_safe ** d_t # Use base_cost argument
-            if not np.all(np.isfinite(cost)):
-                logger.warning(f"Non-finite cost values: {cost}")
-                return np.inf
+            benefit = base_benefit * np.power(x_safe, scale_benefit)
+            cost = base_cost * np.power(x_safe, d_t)
+
+            # Check for non-finite results after calculation
+            if not np.all(np.isfinite(benefit)) or not np.all(np.isfinite(cost)):
+                 # logger.warning(f"Non-finite benefit or cost values computed. Setting action to inf.")
+                 return np.inf # Return inf without logging for every sample
 
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
-                 logger.warning(f"Non-finite action computed for path: {x_path}, base_cost={base_cost:.3f}, base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}. Action: {action}")
-                 return np.inf
+                 # logger.warning(f"Non-finite action computed. Setting action to inf.")
+                 return np.inf # Return inf without logging for every sample
+
             return float(action)
 
         except FloatingPointError as fpe:
-             logger.warning(f"Floating point error in _compute_action_numpy for path: {x_path}, base_cost={base_cost:.3f}, base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}. Error: {fpe}")
-             return np.inf
+             # logger.warning(f"Floating point error in _compute_action_numpy. Error: {fpe}")
+             return np.inf # Return inf without logging for every sample
         except Exception as e:
-            logger.exception(f"Error in _compute_action_numpy (base_cost={base_cost:.3f}, base_benefit={base_benefit:.3f}, scale_benefit={scale_benefit:.3f}): {e}")
+            # Log unexpected errors, but not routine floating point issues
+            logger.exception(f"Unexpected error in _compute_action_numpy: {e}")
             raise
 
     def run_mcmc(self) -> None:
@@ -290,23 +259,18 @@ class PathIntegralOptimizer:
         try:
             with pm.Model(coords={"t": np.arange(self.T)}) as model:
                 # --- Priors for Parameters ---
-                # Use get_pymc_distribution with the stored prior definitions
-                base_cost = get_pymc_distribution("base_cost", self.base_cost_prior_def)
-                base_benefit = get_pymc_distribution("base_benefit", self.base_benefit_prior_def)
-                scale_benefit = get_pymc_distribution("scale_benefit", self.scale_benefit_prior_def)
+                base_cost = self.base_cost_prior_def.create_pymc_distribution("base_cost")
+                base_benefit = self.base_benefit_prior_def.create_pymc_distribution("base_benefit")
+                scale_benefit = self.scale_benefit_prior_def.create_pymc_distribution("scale_benefit")
 
                 # --- GP for d(t): Prior Hyperparameters ---
-                eta = get_pymc_distribution("eta", self.gp_eta_prior_def)
-                ell = get_pymc_distribution("ell", self.gp_ell_prior_def)
-                mean_d = get_pymc_distribution("mean_d", self.gp_mean_prior_def)
+                eta = self.gp_eta_prior_def.create_pymc_distribution("eta")
+                ell = self.gp_ell_prior_def.create_pymc_distribution("ell")
+                mean_d = self.gp_mean_prior_def.create_pymc_distribution("mean_d")
 
                 # --- GP Covariance Function ---
-                # FIX: Wrap ell + 1e-9 in pt.as_tensor_variable to ensure correct handling
-                if ell is None:
-                    raise ValueError("Lengthscale 'ell' cannot be None. Check the prior definition.")
-                if eta is None:
-                    raise ValueError("Amplitude 'eta' cannot be None. Check the prior definition.")
-                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)  # Add jitter
+                # Ensure ell is positive and add jitter
+                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)
 
                 # --- GP Definition ---
                 X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
@@ -322,17 +286,14 @@ class PathIntegralOptimizer:
                 d_t = pm.Deterministic("d_t", pt.softplus(f_d) + 1 + 1e-6)
 
                 # --- Prior for Path (Reparameterized) ---
-                x_raw = pm.Normal("x_raw", mu=0, sigma=1, dims="t")
-                softmax_x_raw = pt.exp(x_raw) / pt.exp(x_raw).sum(axis=0)
-                x_path = pm.Deterministic("x_path", softmax_x_raw * self.total_resource, dims="t")
+                # Use a Dirichlet distribution over the raw values before softmax
+                # This encourages the sum to be total_resource
+                x_raw = pm.Dirichlet("x_raw", a=np.ones(self.T), dims="t") # Dirichlet prior
+                x_path = pm.Deterministic("x_path", x_raw * self.total_resource, dims="t")
 
                 # --- Potentials ---
-                # Constraints (optional but good practice)
-                pm.Potential("non_negative_path", pt.switch(pt.any(x_path < 0), -np.inf, 0))
-                pm.Potential("finite_check_path", pt.switch(pt.any(pt.isnan(x_path)), -np.inf, 0))
-
                 # Action Potential: depends on sampled base_cost, base_benefit, scale_benefit and fixed self.hbar
-                action = self.compute_action(x_path, base_cost, base_benefit, scale_benefit, d_t) # Pass base_cost variable
+                action = self.compute_action(x_path, base_cost, base_benefit, scale_benefit, d_t)
                 # Ensure action is finite before using in potential
                 finite_action = pt.switch(pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar)
                 pm.Potential("action", finite_action)
@@ -341,10 +302,10 @@ class PathIntegralOptimizer:
                 self.trace = pm.sample(
                     draws=self.num_steps,
                     tune=self.burn_in,
-                    target_accept=0.99, # Increased to reduce divergences
-                    max_treedepth=12,   # Increased to allow deeper exploration
-                    chains=4,           # Standard practice
-                    cores=4,            # Use multiple cores if available
+                    target_accept=0.95, # Adjusted target_accept
+                    max_treedepth=15,   # Increased max_treedepth
+                    chains=4,
+                    cores=4,
                     return_inferencedata=True
                 )
 
@@ -354,30 +315,28 @@ class PathIntegralOptimizer:
             # Shape: (chains * draws, T) for path
             self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
             # Shape: (chains * draws,) for params
-            c_samples = self.trace.posterior["base_cost"].values.flatten() # Extract base_cost samples
+            c_samples = self.trace.posterior["base_cost"].values.flatten()
             a_samples = self.trace.posterior["base_benefit"].values.flatten()
             b_samples = self.trace.posterior["scale_benefit"].values.flatten()
-            # d_t is now a Deterministic variable, extract directly
             d_samples = self.trace.posterior["d_t"].values.reshape(-1, self.T)
 
             # Calculate action for each sample using corresponding sampled parameters
             num_samples = len(self.mcmc_paths)
-            self.actions = np.full(num_samples, np.nan, dtype=float) # Initialize with NaN
-            for i in range(num_samples):
-                self.actions[i] = self._compute_action_numpy(
+            self.actions = np.array([
+                self._compute_action_numpy(
                     x_path=self.mcmc_paths[i],
-                    base_cost=c_samples[i], # Pass sampled base_cost
+                    base_cost=c_samples[i],
                     base_benefit=a_samples[i],
                     scale_benefit=b_samples[i],
-                    d_t=d_samples[i]  # Pass GP-derived d(t)
-                )
+                    d_t=d_samples[i]
+                ) for i in range(num_samples)
+            ])
 
             # Log how many actions were finite
             num_finite_actions = np.sum(np.isfinite(self.actions))
             logger.info(f"Computed actions for {num_samples} samples ({num_finite_actions} finite).")
             if num_finite_actions == 0:
-                 logger.error("No finite actions computed. Cannot plot top paths.")
-                 # Consider raising an error or handling this case explicitly
+                 logger.error("No finite actions computed. Cannot plot top paths or generate meaningful summary.")
 
         except Exception as e:
             logger.exception(f"Error in run_mcmc: {e}")
@@ -387,94 +346,87 @@ class PathIntegralOptimizer:
             self.actions = None
             raise # Re-raise the exception
 
+    def _get_top_paths_indices(self, top_percent: float) -> np.ndarray:
+        """Helper to get indices of top paths based on action."""
+        if self.actions is None:
+            return np.array([])
+        finite_indices = np.where(np.isfinite(self.actions))[0]
+        if len(finite_indices) == 0:
+            return np.array([])
+        sorted_finite_indices = finite_indices[np.argsort(self.actions[finite_indices])]
+        num_top_paths = max(1, int(len(finite_indices) * top_percent / 100)) # Calculate based on finite actions
+        return sorted_finite_indices[:num_top_paths]
+
     def plot_top_paths(self, top_percent: float = 5.0) -> None:
         """Plots top paths based on lowest computed action and their mean.
-        
+
         Args:
             top_percent: Percentage of top paths to plot (default: 5%)
         """
         if self.mcmc_paths is None or self.actions is None:
             logger.warning("MCMC data not available. Run run_mcmc() first.")
             return
-        if np.all(~np.isfinite(self.actions)):
-            logger.warning("No finite actions found. Cannot plot top paths.")
+
+        top_indices = self._get_top_paths_indices(top_percent)
+        if len(top_indices) == 0:
+            logger.warning("No finite actions found or no top paths selected. Cannot plot top paths.")
             return
 
         try:
-            # Get indices of finite actions and sort them
-            finite_indices = np.where(np.isfinite(self.actions))[0]
-            if len(finite_indices) == 0:
-                logger.warning("No finite actions found. Cannot plot top paths.")
-                return
-
-            # Sort finite actions (ascending, lower action is better)
-            sorted_finite_indices = finite_indices[np.argsort(self.actions[finite_indices])]
-            
-            # Calculate number of top paths to plot based on percentage
-            num_top_paths = max(1, int(len(sorted_finite_indices) * top_percent / 100))
-            top_indices = sorted_finite_indices[:num_top_paths]
-
             plt.figure(figsize=(12, 7))
-            
+
             # Plot all top paths with transparency
             for idx in top_indices:
                 plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], color='blue', alpha=0.3)
-            
+
             # Calculate and plot mean of top paths
             top_paths = self.mcmc_paths[top_indices]
             mean_top_path = np.mean(top_paths, axis=0)
             plt.plot(range(1, self.T + 1), mean_top_path, label=f"Mean of Top {top_percent}% Paths",
                     color='darkblue', linewidth=2, linestyle='--')
-            
+
             plt.xlabel("Time (t)")
             plt.ylabel("Allocation (x(t))")
-            plt.title(f"Top {top_percent}% MCMC Sampled Allocation Paths (Lowest Action)\n(Showing {num_top_paths} paths in total)")
+            plt.title(f"Top {top_percent}% MCMC Sampled Allocation Paths (Lowest Action)\n(Showing {len(top_indices)} paths in total)")
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
             plt.show()
-            
+
         except Exception as e:
             logger.exception(f"Error in plot_top_paths: {e}")
             raise
 
     def plot(self, top_percent: float = 5.0) -> None:
         """Diagnostic plot showing distribution of action values with vertical line at mean of top paths.
-        
+
         Args:
             top_percent: Percentage of top paths to highlight (default: 5%)
         """
-        if self.mcmc_paths is None or self.actions is None:
-            logger.warning("MCMC data not available. Run run_mcmc() first.")
+        if self.actions is None:
+            logger.warning("MCMC actions not available. Run run_mcmc() first.")
             return
-        if np.all(~np.isfinite(self.actions)):
+
+        finite_actions = self.actions[np.isfinite(self.actions)]
+        if len(finite_actions) == 0:
             logger.warning("No finite actions found. Cannot create diagnostic plot.")
             return
 
         try:
-            # Calculate number of top paths
-            finite_indices = np.where(np.isfinite(self.actions))[0]
-            if len(finite_indices) == 0:
-                logger.warning("No finite actions found. Cannot create diagnostic plot.")
-                return
-                
-            num_top_paths = max(1, int(len(finite_indices) * top_percent / 100))
-            sorted_indices = finite_indices[np.argsort(self.actions[finite_indices])]
-            top_indices = sorted_indices[:num_top_paths]
+            top_indices = self._get_top_paths_indices(top_percent)
             top_actions = self.actions[top_indices]
-            
-            # Create figure
+
             plt.figure(figsize=(12, 7))
-            
+
             # Plot KDE of all finite actions
-            az.plot_kde(self.actions[finite_indices], plot_kwargs={'color': 'lightblue'})
-            
+            az.plot_kde(finite_actions, plot_kwargs={'color': 'lightblue'})
+
             # Add vertical line for mean of top paths
             mean_top_action = np.mean(top_actions) if len(top_actions) > 0 else np.nan
             if np.isfinite(mean_top_action):
                 plt.axvline(mean_top_action, color='darkblue', linestyle='--', linewidth=2,
                           label=f'Mean Action of Top {top_percent}% Paths')
-            
+
             plt.xlabel("Action Value")
             plt.ylabel("Density")
             plt.title(f"Distribution of Path Actions with Top {top_percent}% Highlight\n(Lower action = Higher probability)")
@@ -482,7 +434,7 @@ class PathIntegralOptimizer:
             plt.grid(True)
             plt.tight_layout()
             plt.show()
-            
+
         except Exception as e:
             logger.exception(f"Error in plot: {e}")
             raise
@@ -499,28 +451,15 @@ class PathIntegralOptimizer:
                 logger.warning("No trace collected. Cannot generate summary.")
                 return None
 
-            # Convert to ArviZ InferenceData if it's not already
-            if not isinstance(self.trace, az.InferenceData):
-                 idata = az.convert_to_inference_data(self.trace)
-            else:
-                 idata = self.trace
+            idata = self.trace # trace is already InferenceData
 
             # Get summary statistics for path
             mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
             std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
 
-            # Calculate action values from posterior samples using the NumPy version
-            x_path_samples = idata.posterior.x_path.values.reshape(-1, self.T)
-            c_samples = idata.posterior["base_cost"].values.flatten() # Get base_cost samples
-            a_samples = idata.posterior["base_benefit"].values.flatten() # Get base_benefit samples
-            b_samples = idata.posterior["scale_benefit"].values.flatten() # Get scale_benefit samples
-            d_samples = idata.posterior["d_t"].values.reshape(-1, self.T) # Get d_t samples
+            # Use pre-calculated actions
+            finite_action_values = self.actions[np.isfinite(self.actions)]
 
-            # Pass all sampled parameters to _compute_action_numpy
-            action_values = np.array([self._compute_action_numpy(x, c, a, b, d) for x, c, a, b, d in zip(x_path_samples, c_samples, a_samples, b_samples, d_samples)])
-
-            # Filter out potential non-finite values before finding min/mean/std
-            finite_action_values = action_values[np.isfinite(action_values)]
             if len(finite_action_values) == 0:
                 logger.warning("No finite action values found in the posterior samples.")
                 best_action = np.nan
@@ -532,46 +471,112 @@ class PathIntegralOptimizer:
                 action_std = float(np.std(finite_action_values))
 
             # --- Parameter Summaries ---
-            # Note: Cannot add base_cost summary to PathIntegralOptimizerResult as it's read-only.
-            # The result object only has fields for base_benefit, scale_benefit, base_cost (fixed float), etc.
-            # It does NOT have fields for the posterior summaries of base_cost, base_benefit, scale_benefit, GP params.
-            # This summary generation needs to be updated if PathIntegralOptimizerResult is modified.
-            logger.warning("PathIntegralOptimizerResult object structure is read-only and does not support adding summaries for inferred parameters (base_cost, base_benefit, scale_benefit, GP params). The generated result object will only contain fixed/prior info and path/action summaries.")
+            # Extract summary statistics for each inferred parameter using ArviZ
+            summary_df = az.summary(idata, var_names=["base_cost", "base_benefit", "scale_benefit", "eta", "ell", "mean_d"])
+
+            def create_parameter_summary(param_name: str) -> ParameterSummary:
+                """Helper to create ParameterSummary object from ArviZ summary."""
+                if param_name not in summary_df.index:
+                    logger.warning(f"Parameter '{param_name}' not found in summary.")
+                    # Return a default ParameterSummary with NaNs
+                    return ParameterSummary(mean=np.nan, sd=np.nan, hdi_3=(np.nan, np.nan), hdi_97=(np.nan, np.nan), mcse_mean=np.nan, mcse_sd=np.nan, ess_bulk=np.nan, ess_tail=np.nan, r_hat=np.nan)
+
+                param_summary = summary_df.loc[param_name]
+                return ParameterSummary(
+                    mean=float(param_summary['mean']),
+                    sd=float(param_summary['sd']),
+                    hdi_3=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Note: ArviZ uses hdi_3% and hdi_97%
+                    hdi_97=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Using the same for both for simplicity, adjust if different HDIs are needed
+                    mcse_mean=float(param_summary['mcse_mean']),
+                    mcse_sd=float(param_summary['mcse_sd']),
+                    ess_bulk=float(param_summary['ess_bulk']),
+                    ess_tail=float(param_summary['ess_tail']),
+                    r_hat=float(param_summary['r_hat'])
+                )
+
+            base_cost_summary = create_parameter_summary("base_cost")
+            base_benefit_summary = create_parameter_summary("base_benefit")
+            scale_benefit_summary = create_parameter_summary("scale_benefit")
+            gp_eta_summary = create_parameter_summary("eta")
+            gp_ell_summary = create_parameter_summary("ell")
+            gp_mean_summary = create_parameter_summary("mean_d")
+
 
             # Create and return the result object
-            # Note: The result object expects the *prior definitions* for base_benefit and scale_benefit,
-            # and the *fixed* base_cost value. This doesn't align with summarizing the *posterior*
-            # of the inferred parameters. This part of the code might need review depending on
-            # the intended use of PathIntegralOptimizerResult. For now, populating based on
-            # the existing structure.
             result = PathIntegralOptimizerResult(
-                base_benefit=self.base_benefit_prior_def, # Using prior def as per current Result structure
-                scale_benefit=self.scale_benefit_prior_def, # Using prior def as per current Result structure
-                # Attempt to get a representative value for base_cost from its prior definition
-                base_cost=self.base_cost_prior_def.get('mu', np.nan), # Using mu from prior def as a placeholder
                 total_resource=self.total_resource,
                 T=self.T,
                 hbar=self.hbar,
-                num_samples=len(x_path_samples),
+                num_samples=len(self.actions), # Total samples attempted
                 num_finite_actions=len(finite_action_values),
+
+                base_cost_summary=base_cost_summary,
+                base_benefit_summary=base_benefit_summary,
+                scale_benefit_summary=scale_benefit_summary,
+                gp_eta_summary=gp_eta_summary,
+                gp_ell_summary=gp_ell_summary,
+                gp_mean_summary=gp_mean_summary,
+
                 best_action=best_action,
                 action_mean=action_mean,
                 action_std=action_std,
                 mean_path=mean_path,
                 std_path=std_path
-                # Cannot add GP parameter summaries or posterior base_cost/base_benefit/scale_benefit summaries here
             )
             return result
 
         except Exception as e:
             logger.exception(f"Error in generate_summary: {e}")
             raise
-        # return None # Ensure None is returned on exception path as well - already handled by re-raising
+
+    def _calculate_historical_forecasted_metrics(self) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+        """Helper to calculate historical and forecasted cost/benefit."""
+        if self.historical_input is None or self.historical_t is None or self.trace is None or self.mcmc_paths is None or self.T is None or self.T <= 0:
+            logger.warning("Missing data for historical/forecasted metric calculation.")
+            return None, None, None, None
+
+        try:
+            # Access posterior means for parameters
+            base_cost_mean = self.trace.posterior["base_cost"].values.mean()
+            base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
+            scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
+            d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
+
+            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
+
+            # Calculate historical cost and benefit
+            hist_len = len(self.historical_input)
+            if hist_len > len(d_t_mean):
+                 logger.warning("Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately.")
+                 historical_cost = np.full_like(self.historical_input, np.nan)
+                 historical_benefit = np.full_like(self.historical_input, np.nan)
+            else:
+                historical_d_t = d_t_mean[:hist_len]
+                historical_cost = base_cost_mean * self.historical_input ** historical_d_t
+                historical_benefit = base_benefit_mean * self.historical_input ** scale_benefit_mean
+
+            # Calculate forecasted cost and benefit
+            forecast_len = len(mean_forecast_path)
+            if len(d_t_mean) < hist_len + forecast_len:
+                 logger.warning("d_t length is less than historical + forecast length. Cannot calculate forecasted cost/benefit accurately.")
+                 forecast_cost = np.full_like(mean_forecast_path, np.nan)
+                 forecast_benefit = np.full_like(mean_forecast_path, np.nan)
+            else:
+                forecast_d_t = d_t_mean[hist_len : hist_len + forecast_len]
+                forecast_cost = base_cost_mean * mean_forecast_path ** forecast_d_t
+                forecast_benefit = base_benefit_mean * mean_forecast_path ** scale_benefit_mean
+
+            return historical_cost, historical_benefit, forecast_cost, forecast_benefit
+
+        except Exception as e:
+            logger.exception(f"Error calculating historical/forecasted metrics: {e}")
+            return None, None, None, None
+
 
     def plot_forecast(self, output_file: Optional[str] = None) -> None:
         """
         Creates three subplots showing historical data and forecasts for input, cost, and benefit.
-        
+
         Args:
             output_file (Optional[str]): If provided, saves the plot to this file.
                                          Otherwise, shows the plot.
@@ -587,24 +592,29 @@ class PathIntegralOptimizer:
             return
         if self.trace is None:
              logger.warning("No MCMC trace available. Cannot calculate historical/forecasted cost/benefit.")
-             return
+             # Still plot input if possible
+             plot_cost_benefit = False
+        else:
+             plot_cost_benefit = True
+
 
         try:
             # Create figure with subplots
-            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 18))
-            
+            fig, axes = plt.subplots(3, 1, figsize=(14, 18))
+            ax1, ax2, ax3 = axes
+
             # Calculate time axis for forecast
             last_historical_time = self.historical_t[-1]
             time_step = 1
             if len(self.historical_t) > 1:
                 time_step = self.historical_t[1] - self.historical_t[0]
             forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
-            
+
             # Get mean forecast path
             mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
-            
+
             # Plot input data
-            ax1.plot(self.historical_t, self.historical_input, label="Historical Input", 
+            ax1.plot(self.historical_t, self.historical_input, label="Historical Input",
                     color='blue', marker='o', linestyle='-')
             ax1.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input",
                     color='red', marker='x', linestyle='--')
@@ -615,57 +625,29 @@ class PathIntegralOptimizer:
             ax1.set_title("Historical Input and Mean Forecasted Allocation")
             ax1.legend()
             ax1.grid(True)
-            
-            # Plot cost data
-            try:
-                # Access posterior means for parameters
-                base_cost_mean = self.trace.posterior["base_cost"].values.mean()
-                base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
-                scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
-                # d_t is time-dependent, get the mean for each time step
-                d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
 
-                # Calculate historical cost and benefit using historical input and corresponding d_t values
-                # Need to align historical time steps with d_t indices.
-                # Assuming historical_t corresponds to the first len(historical_input) values of d_t_mean
-                if len(self.historical_input) > len(d_t_mean):
-                     logger.warning("Historical input length is greater than d_t length. Cannot calculate historical cost/benefit accurately.")
-                     historical_cost = np.full_like(self.historical_input, np.nan)
-                     historical_benefit = np.full_like(self.historical_input, np.nan)
+            if plot_cost_benefit:
+                historical_cost, historical_benefit, forecast_cost, forecast_benefit = self._calculate_historical_forecasted_metrics()
+
+                if historical_cost is not None and historical_benefit is not None and forecast_cost is not None and forecast_benefit is not None:
+                    # Plot historical cost
+                    ax2.plot(self.historical_t, historical_cost,
+                            label="Historical Cost (Estimated)", color='green', marker='o', linestyle='-')
+
+                    # Plot forecasted cost
+                    ax2.plot(forecast_time_axis, forecast_cost,
+                            label="Forecasted Cost (Mean)", color='darkgreen', marker='x', linestyle='--')
+
+                    # Plot historical benefit
+                    ax3.plot(self.historical_t, historical_benefit,
+                            label="Historical Benefit (Estimated)", color='orange', marker='o', linestyle='-')
+
+                    # Plot forecasted benefit
+                    ax3.plot(forecast_time_axis, forecast_benefit,
+                            label="Forecasted Benefit (Mean)", color='darkorange', marker='x', linestyle='--')
                 else:
-                    historical_d_t = d_t_mean[:len(self.historical_input)]
-                    historical_cost = base_cost_mean * self.historical_input ** historical_d_t
-                    historical_benefit = base_benefit_mean * self.historical_input ** scale_benefit_mean
+                    logger.warning("Skipping cost/benefit plots due to calculation errors.")
 
-                # Calculate forecasted cost and benefit using mean forecast path and remaining d_t values
-                forecast_d_t = d_t_mean[len(self.historical_input):]
-                if len(forecast_d_t) != len(mean_forecast_path):
-                     logger.warning("Forecast path length does not match remaining d_t length. Cannot calculate forecasted cost/benefit accurately.")
-                     forecast_cost = np.full_like(mean_forecast_path, np.nan)
-                     forecast_benefit = np.full_like(mean_forecast_path, np.nan)
-                else:
-                    forecast_cost = base_cost_mean * mean_forecast_path ** forecast_d_t
-                    forecast_benefit = base_benefit_mean * mean_forecast_path ** scale_benefit_mean
-
-                # Plot historical cost
-                ax2.plot(self.historical_t, historical_cost,
-                        label="Historical Cost (Estimated)", color='green', marker='o', linestyle='-')
-
-                # Plot forecasted cost
-                ax2.plot(forecast_time_axis, forecast_cost,
-                        label="Forecasted Cost (Mean)", color='darkgreen', marker='x', linestyle='--')
-
-                # Plot historical benefit
-                ax3.plot(self.historical_t, historical_benefit,
-                        label="Historical Benefit (Estimated)", color='orange', marker='o', linestyle='-')
-
-                # Plot forecasted benefit
-                ax3.plot(forecast_time_axis, forecast_benefit,
-                        label="Forecasted Benefit (Mean)", color='darkorange', marker='x', linestyle='--')
-
-            except Exception as e:
-                logger.warning(f"Could not calculate and plot historical/forecasted cost/benefit: {e}")
-                # Continue plotting other elements even if cost/benefit fails
 
             ax2.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
                        label="Forecast Horizon Start")
@@ -682,15 +664,19 @@ class PathIntegralOptimizer:
             ax3.set_title("Historical and Forecasted Benefit")
             ax3.legend()
             ax3.grid(True)
-            
+
             # Add overall title and adjust layout
             plt.suptitle("Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.95)
             plt.tight_layout()
-            
-            # Show the plot
-            plt.show()
-            logger.info("Forecast plot displayed")
-                
+
+            # Save or show the plot
+            if output_file:
+                plt.savefig(output_file)
+                logger.info(f"Forecast plot saved to {output_file}")
+            else:
+                plt.show()
+                logger.info("Forecast plot displayed")
+
         except Exception as e:
             logger.exception(f"Error in plot_forecast: {e}")
             # Do not re-raise, just log, so other operations can continue if needed.
@@ -707,12 +693,14 @@ class PathIntegralOptimizer:
         forecast_steps: int,
         t:Optional[np.array]=None
         ):
+        """
+        Creates a PathIntegralOptimizer instance by first estimating parameters
+        from historical data and using the estimates to define priors.
+        """
         if t is None:
             _t_hist = np.arange(1, len(input) + 1)
         else:
             _t_hist = t
-        # optimizer_T is the length of the forecast period itself
-        optimizer_T = forecast_steps 
 
         data:Dataset=Dataset(
             t=_t_hist,
@@ -721,60 +709,69 @@ class PathIntegralOptimizer:
             benefit=benefit
         )
 
-        logger.info('Building model from input data')
-        # ParameterEstimator returns ParameterEstimationResult which contains
-        # {'mu': ..., 'sigma': ...} for each estimated parameter.
-        parameters:ParameterEstimationResult=ParameterEstimator(data) \
-            .get_parameters()
+        logger.info('Estimating parameters from input data to define priors...')
+        try:
+            # ParameterEstimator returns ParameterEstimationResult which contains
+            # {'mu': ..., 'sigma': ...} for each estimated parameter.
+            parameters:ParameterEstimationResult=ParameterEstimator(data) \
+                .get_parameters()
+        except Exception as e:
+            logger.exception(f"Error during parameter estimation: {e}")
+            raise
 
         # Construct the full prior dictionaries from the estimation results
         # based on the desired distribution types.
-        base_cost_prior_dict = {
-            'dist': 'TruncatedNormal',
-            'mu': parameters.base_cost['mu'],
-            'sigma': parameters.base_cost['sigma'],
-            'lower': 0.0 # base_cost must be positive
-        }
-        base_benefit_prior_dict = {
-            'dist': 'TruncatedNormal',
-            'mu': parameters.base_benefit['mu'],
-            'sigma': parameters.base_benefit['sigma'],
-            'lower': 0.0 # base_benefit must be positive
-        }
-        scale_benefit_prior_dict = {
-            'dist': 'Beta',
-            'mu': parameters.scale_benefit['mu'],
-            'sigma': parameters.scale_benefit['sigma']
-            # Beta distribution handles the (0, 1) range
-        }
-        gp_eta_prior_dict = {
-            'dist': 'HalfNormal',
-            'sigma': parameters.gp_eta_prior['sigma'] # HalfNormal takes sigma
-        }
-        gp_ell_prior_dict = {
-            'dist': 'Gamma',
-            'mu': parameters.gp_ell_prior['mu'], # Gamma conversion from mu/sigma
-            'sigma': parameters.gp_ell_prior['sigma']
-        }
-        gp_mean_prior_dict = {
-            'dist': 'Normal',
-            'mu': parameters.gp_mean_prior['mu'],
-            'sigma': parameters.gp_mean_prior['sigma']
-        }
+        # Use Pydantic models for validation during construction
+        try:
+            base_cost_prior_dict = {
+                'dist': 'TruncatedNormal',
+                'mu': parameters.base_cost['mu'],
+                'sigma': parameters.base_cost['sigma'],
+                'lower': 0.0 # base_cost must be positive
+            }
+            base_benefit_prior_dict = {
+                'dist': 'TruncatedNormal',
+                'mu': parameters.base_benefit['mu'],
+                'sigma': parameters.base_benefit['sigma'],
+                'lower': 0.0 # base_benefit must be positive
+            }
+            scale_benefit_prior_dict = {
+                'dist': 'Beta',
+                'mu': parameters.scale_benefit['mu'],
+                'sigma': parameters.scale_benefit['sigma']
+                # Beta distribution handles the (0, 1) range
+            }
+            gp_eta_prior_dict = {
+                'dist': 'HalfNormal',
+                'sigma': parameters.gp_eta_prior['sigma'] # HalfNormal takes sigma
+            }
+            gp_ell_prior_dict = {
+                'dist': 'Gamma',
+                'mu': parameters.gp_ell_prior['mu'], # Gamma conversion from mu/sigma
+                'sigma': parameters.gp_ell_prior['sigma']
+            }
+            gp_mean_prior_dict = {
+                'dist': 'Normal',
+                'mu': parameters.gp_mean_prior['mu'],
+                'sigma': parameters.gp_mean_prior['sigma']
+            }
 
-        # Pass the constructed prior dictionaries to the constructor
-        return PathIntegralOptimizer(
-            base_cost_prior=base_cost_prior_dict,
-            base_benefit_prior=base_benefit_prior_dict,
-            scale_benefit_prior=scale_benefit_prior_dict,
-            gp_eta_prior=gp_eta_prior_dict,
-            gp_ell_prior=gp_ell_prior_dict,
-            gp_mean_prior=gp_mean_prior_dict,
-            total_resource=total_resource,
-            T=optimizer_T,
-            hbar=hbar,
-            num_steps=num_steps,
-            burn_in=burn_in,
-            historical_t=_t_hist,
-            historical_input=input
-        )
+            # Pass the constructed prior dictionaries to the constructor
+            return PathIntegralOptimizer(
+                base_cost_prior=base_cost_prior_dict,
+                base_benefit_prior=base_benefit_prior_dict,
+                scale_benefit_prior=scale_benefit_prior_dict,
+                gp_eta_prior=gp_eta_prior_dict,
+                gp_ell_prior=gp_ell_prior_dict,
+                gp_mean_prior=gp_mean_prior_dict,
+                total_resource=total_resource,
+                T=forecast_steps, # T is the forecast period length
+                hbar=hbar,
+                num_steps=num_steps,
+                burn_in=burn_in,
+                historical_t=_t_hist,
+                historical_input=input
+            )
+        except Exception as e:
+            logger.exception(f"Error constructing PathIntegralOptimizer from estimated parameters: {e}")
+            raise
