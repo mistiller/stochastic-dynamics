@@ -13,7 +13,7 @@ from .path_integral_optimizer_result import PathIntegralOptimizerResult, Paramet
 from .parameter_estimator import ParameterEstimator
 from .parameter_estimation_result import ParameterEstimationResult
 from .dataset import Dataset
-from .prior_definition import PriorDefinition # Import PriorDefinition
+from .prior_definition import PriorDefinition
 
 # --- Main Optimizer Class ---
 
@@ -116,7 +116,6 @@ class PathIntegralOptimizer:
         try:
             # Basic validation for inputs
             if not (np.isfinite(base_cost) and np.isfinite(base_benefit) and np.isfinite(scale_benefit)):
-                # logger.warning(f"Non-finite parameter values passed: base_cost={base_cost}, base_benefit={base_benefit}, scale_benefit={scale_benefit}")
                 return np.inf
 
             # Add clipping/validation for parameters
@@ -129,7 +128,6 @@ class PathIntegralOptimizer:
             # by ensuring the MCMC samples stay positive (e.g., through parameterization).
             # For now, check and return inf if non-positive values are present.
             if np.any(x_path <= 0):
-                 # logger.warning(f"Path contains non-positive values. Setting action to inf.")
                  return np.inf # Return inf without logging for every sample
 
             # Use a small epsilon for numerical stability in power calculation if needed
@@ -140,13 +138,11 @@ class PathIntegralOptimizer:
 
             # Check for non-finite results after calculation
             if not np.all(np.isfinite(benefit)) or not np.all(np.isfinite(cost)):
-                 # logger.warning(f"Non-finite benefit or cost values computed. Setting action to inf.")
                  return np.inf # Return inf without logging for every sample
 
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
-                 # logger.warning(f"Non-finite action computed. Setting action to inf.")
                  return np.inf # Return inf without logging for every sample
 
             return float(action)
@@ -154,103 +150,94 @@ class PathIntegralOptimizer:
         except FloatingPointError as fpe:
              # logger.warning(f"Floating point error in _compute_action_numpy. Error: {fpe}")
              return np.inf # Return inf without logging for every sample
-        except Exception as e:
-            # Log unexpected errors, but not routine floating point issues
-            logger.exception(f"Unexpected error in _compute_action_numpy: {e}")
-            raise
+        # Removed general Exception catch
 
     def run_mcmc(self) -> None:
         """Runs the NUTS simulation inferring 'base_cost', 'base_benefit', 'scale_benefit', and the path 'x_path'."""
         logger.info("Starting PyTensor/PyMC MCMC sampling for x_path, base_cost, base_benefit, scale_benefit, and GP-based d(t)...")
-        try:
-            with pm.Model(coords={"t": np.arange(self.T)}) as model:
-                # --- Priors for Parameters ---
-                base_cost = self.base_cost_prior_def.create_pymc_distribution("base_cost")
-                base_benefit = self.base_benefit_prior_def.create_pymc_distribution("base_benefit")
-                scale_benefit = self.scale_benefit_prior_def.create_pymc_distribution("scale_benefit")
+        # Removed try...except Exception block
+        with pm.Model(coords={"t": np.arange(self.T)}) as model:
+            # --- Priors for Parameters ---
+            base_cost = self.base_cost_prior_def.create_pymc_distribution("base_cost")
+            base_benefit = self.base_benefit_prior_def.create_pymc_distribution("base_benefit")
+            scale_benefit = self.scale_benefit_prior_def.create_pymc_distribution("scale_benefit")
 
-                # --- GP for d(t): Prior Hyperparameters ---
-                eta = self.gp_eta_prior_def.create_pymc_distribution("eta")
-                ell = self.gp_ell_prior_def.create_pymc_distribution("ell")
-                mean_d = self.gp_mean_prior_def.create_pymc_distribution("mean_d")
+            # --- GP for d(t): Prior Hyperparameters ---
+            eta = self.gp_eta_prior_def.create_pymc_distribution("eta")
+            ell = self.gp_ell_prior_def.create_pymc_distribution("ell")
+            mean_d = self.gp_mean_prior_def.create_pymc_distribution("mean_d")
 
-                # --- GP Covariance Function ---
-                # Ensure ell is positive and add jitter
-                cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)
+            # --- GP Covariance Function ---
+            # Ensure ell is positive and add jitter
+            cov_d = eta**2 * pm.gp.cov.ExpQuad(1, ls=pt.as_tensor_variable(ell + 1e-9)) + pm.gp.cov.WhiteNoise(1e-6)
 
-                # --- GP Definition ---
-                X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
-                X = (X - np.mean(X)) / np.std(X)  # Standardize input for GP
+            # --- GP Definition ---
+            X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
+            X = (X - np.mean(X)) / np.std(X)  # Standardize input for GP
 
-                gp_d = pm.gp.Latent(
-                    mean_func=pm.gp.mean.Constant(mean_d),
-                    cov_func=cov_d
-                )
-                f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
-                # Transform f_d to ensure d(t) > 1
-                # softplus(x) > 0, so softplus(x) + 1 > 1. Add 1e-6 for numerical stability.
-                d_t = pm.Deterministic("d_t", pt.softplus(f_d) + 1 + 1e-6)
+            gp_d = pm.gp.Latent(
+                mean_func=pm.gp.mean.Constant(mean_d),
+                cov_func=cov_d
+            )
+            f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
+            # Transform f_d to ensure d(t) > 1
+            # softplus(x) > 0, so softplus(x) + 1 > 1. Add 1e-6 for numerical stability.
+            d_t = pm.Deterministic("d_t", pt.softplus(f_d) + 1 + 1e-6)
 
-                # --- Prior for Path (Reparameterized) ---
-                # Use a Dirichlet distribution over the raw values before softmax
-                # This encourages the sum to be total_resource
-                x_raw = pm.Dirichlet("x_raw", a=np.ones(self.T), dims="t") # Dirichlet prior
-                x_path = pm.Deterministic("x_path", x_raw * self.total_resource, dims="t")
+            # --- Prior for Path (Reparameterized) ---
+            # Use a Dirichlet distribution over the raw values before softmax
+            # This encourages the sum to be total_resource
+            x_raw = pm.Dirichlet("x_raw", a=np.ones(self.T), dims="t") # Dirichlet prior
+            x_path = pm.Deterministic("x_path", x_raw * self.total_resource, dims="t")
 
-                # --- Potentials ---
-                # Action Potential: depends on sampled base_cost, base_benefit, scale_benefit and fixed self.hbar
-                action = self.compute_action(x_path, base_cost, base_benefit, scale_benefit, d_t)
-                # Ensure action is finite before using in potential
-                finite_action = pt.switch(pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar)
-                pm.Potential("action", finite_action)
+            # --- Potentials ---
+            # Action Potential: depends on sampled base_cost, base_benefit, scale_benefit and fixed self.hbar
+            action = self.compute_action(x_path, base_cost, base_benefit, scale_benefit, d_t)
+            # Ensure action is finite before using in potential
+            finite_action = pt.switch(pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar)
+            pm.Potential("action", finite_action)
 
-                # --- Sampling ---
-                self.trace = pm.sample(
-                    draws=self.num_steps,
-                    tune=self.burn_in,
-                    target_accept=0.95, # Adjusted target_accept
-                    max_treedepth=15,   # Increased max_treedepth
-                    chains=4,
-                    cores=4,
-                    return_inferencedata=True
-                )
+            # --- Sampling ---
+            self.trace = pm.sample(
+                draws=self.num_steps,
+                tune=self.burn_in,
+                target_accept=0.95, # Adjusted target_accept
+                max_treedepth=15,   # Increased max_treedepth
+                chains=4,
+                cores=4,
+                return_inferencedata=True
+            )
 
-            logger.info("MCMC sampling finished. Processing trace...")
+        logger.info("MCMC sampling finished. Processing trace...")
 
-            # Extract posterior samples
-            # Shape: (chains * draws, T) for path
-            self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
-            # Shape: (chains * draws,) for params
-            c_samples = self.trace.posterior["base_cost"].values.flatten()
-            a_samples = self.trace.posterior["base_benefit"].values.flatten()
-            b_samples = self.trace.posterior["scale_benefit"].values.flatten()
-            d_samples = self.trace.posterior["d_t"].values.reshape(-1, self.T)
+        # Extract posterior samples
+        # Shape: (chains * draws, T) for path
+        self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
+        # Shape: (chains * draws,) for params
+        c_samples = self.trace.posterior["base_cost"].values.flatten()
+        a_samples = self.trace.posterior["base_benefit"].values.flatten()
+        b_samples = self.trace.posterior["scale_benefit"].values.flatten()
+        d_samples = self.trace.posterior["d_t"].values.reshape(-1, self.T)
 
-            # Calculate action for each sample using corresponding sampled parameters
-            num_samples = len(self.mcmc_paths)
-            self.actions = np.array([
-                self._compute_action_numpy(
-                    x_path=self.mcmc_paths[i],
-                    base_cost=c_samples[i],
-                    base_benefit=a_samples[i],
-                    scale_benefit=b_samples[i],
-                    d_t=d_samples[i]
-                ) for i in range(num_samples)
-            ])
+        # Calculate action for each sample using corresponding sampled parameters
+        num_samples = len(self.mcmc_paths)
+        self.actions = np.array([
+            self._compute_action_numpy(
+                x_path=self.mcmc_paths[i],
+                base_cost=c_samples[i],
+                base_benefit=a_samples[i],
+                scale_benefit=b_samples[i],
+                d_t=d_samples[i]
+            ) for i in range(num_samples)
+        ])
 
-            # Log how many actions were finite
-            num_finite_actions = np.sum(np.isfinite(self.actions))
-            logger.info(f"Computed actions for {num_samples} samples ({num_finite_actions} finite).")
-            if num_finite_actions == 0:
-                 logger.error("No finite actions computed. Cannot plot top paths or generate meaningful summary.")
+        # Log how many actions were finite
+        num_finite_actions = np.sum(np.isfinite(self.actions))
+        logger.info(f"Computed actions for {num_samples} samples ({num_finite_actions} finite).")
+        if num_finite_actions == 0:
+             logger.error("No finite actions computed. Cannot plot top paths or generate meaningful summary.")
 
-        except Exception as e:
-            logger.exception(f"Error in run_mcmc: {e}")
-            # Clean up potentially partially assigned state
-            self.trace = None
-            self.mcmc_paths = None
-            self.actions = None
-            raise # Re-raise the exception
+        # Removed re-raise
 
     def _get_top_paths_indices(self, top_percent: float) -> np.ndarray:
         """Helper to get indices of top paths based on action."""
@@ -278,30 +265,27 @@ class PathIntegralOptimizer:
             logger.warning("No finite actions found or no top paths selected. Cannot plot top paths.")
             return
 
-        try:
-            plt.figure(figsize=(12, 7))
+        # Removed try...except Exception block
+        plt.figure(figsize=(12, 7))
 
-            # Plot all top paths with transparency
-            for idx in top_indices:
-                plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], color='blue', alpha=0.3)
+        # Plot all top paths with transparency
+        for idx in top_indices:
+            plt.plot(range(1, self.T + 1), self.mcmc_paths[idx], color='blue', alpha=0.3)
 
-            # Calculate and plot mean of top paths
-            top_paths = self.mcmc_paths[top_indices]
-            mean_top_path = np.mean(top_paths, axis=0)
-            plt.plot(range(1, self.T + 1), mean_top_path, label=f"Mean of Top {top_percent}% Paths",
-                    color='darkblue', linewidth=2, linestyle='--')
+        # Calculate and plot mean of top paths
+        top_paths = self.mcmc_paths[top_indices]
+        mean_top_path = np.mean(top_paths, axis=0)
+        plt.plot(range(1, self.T + 1), mean_top_path, label=f"Mean of Top {top_percent}% Paths",
+                color='darkblue', linewidth=2, linestyle='--')
 
-            plt.xlabel("Time (t)")
-            plt.ylabel("Allocation (x(t))")
-            plt.title(f"Top {top_percent}% MCMC Sampled Allocation Paths (Lowest Action)\n(Showing {len(top_indices)} paths in total)")
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.show()
-
-        except Exception as e:
-            logger.exception(f"Error in plot_top_paths: {e}")
-            raise
+        plt.xlabel("Time (t)")
+        plt.ylabel("Allocation (x(t))")
+        plt.title(f"Top {top_percent}% MCMC Sampled Allocation Paths (Lowest Action)\n(Showing {len(top_indices)} paths in total)")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+        # Removed re-raise
 
     def plot(self, top_percent: float = 5.0) -> None:
         """Diagnostic plot showing distribution of action values with vertical line at mean of top paths.
@@ -318,32 +302,29 @@ class PathIntegralOptimizer:
             logger.warning("No finite actions found. Cannot create diagnostic plot.")
             return
 
-        try:
-            top_indices = self._get_top_paths_indices(top_percent)
-            top_actions = self.actions[top_indices]
+        # Removed try...except Exception block
+        top_indices = self._get_top_paths_indices(top_percent)
+        top_actions = self.actions[top_indices]
 
-            plt.figure(figsize=(12, 7))
+        plt.figure(figsize=(12, 7))
 
-            # Plot KDE of all finite actions
-            az.plot_kde(finite_actions, plot_kwargs={'color': 'lightblue'})
+        # Plot KDE of all finite actions
+        az.plot_kde(finite_actions, plot_kwargs={'color': 'lightblue'})
 
-            # Add vertical line for mean of top paths
-            mean_top_action = np.mean(top_actions) if len(top_actions) > 0 else np.nan
-            if np.isfinite(mean_top_action):
-                plt.axvline(mean_top_action, color='darkblue', linestyle='--', linewidth=2,
-                          label=f'Mean Action of Top {top_percent}% Paths')
+        # Add vertical line for mean of top paths
+        mean_top_action = np.mean(top_actions) if len(top_actions) > 0 else np.nan
+        if np.isfinite(mean_top_action):
+            plt.axvline(mean_top_action, color='darkblue', linestyle='--', linewidth=2,
+                      label=f'Mean Action of Top {top_percent}% Paths')
 
-            plt.xlabel("Action Value")
-            plt.ylabel("Density")
-            plt.title(f"Distribution of Path Actions with Top {top_percent}% Highlight\n(Lower action = Higher probability)")
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.show()
-
-        except Exception as e:
-            logger.exception(f"Error in plot: {e}")
-            raise
+        plt.xlabel("Action Value")
+        plt.ylabel("Density")
+        plt.title(f"Distribution of Path Actions with Top {top_percent}% Highlight\n(Lower action = Higher probability)")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+        # Removed re-raise
 
     def generate_summary(self) -> PathIntegralOptimizerResult | None:
         """Generates summary of the MCMC results.
@@ -352,88 +333,85 @@ class PathIntegralOptimizer:
             PathIntegralOptimizerResult | None: An object containing the summary results,
                                                 or None if no trace is available.
         """
-        try:
-            if not hasattr(self, 'trace') or self.trace is None:
-                logger.warning("No trace collected. Cannot generate summary.")
-                return None
+        # Removed try...except Exception block
+        if not hasattr(self, 'trace') or self.trace is None:
+            logger.warning("No trace collected. Cannot generate summary.")
+            return None
 
-            idata = self.trace # trace is already InferenceData
+        idata = self.trace # trace is already InferenceData
 
-            # Get summary statistics for path
-            mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
-            std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
+        # Get summary statistics for path
+        mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
+        std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
 
-            # Use pre-calculated actions
-            finite_action_values = self.actions[np.isfinite(self.actions)]
+        # Use pre-calculated actions
+        finite_action_values = self.actions[np.isfinite(self.actions)]
 
-            if len(finite_action_values) == 0:
-                logger.warning("No finite action values found in the posterior samples.")
-                best_action = np.nan
-                action_mean = np.nan
-                action_std = np.nan
-            else:
-                best_action = float(np.min(finite_action_values))
-                action_mean = float(np.mean(finite_action_values))
-                action_std = float(np.std(finite_action_values))
+        if len(finite_action_values) == 0:
+            logger.warning("No finite action values found in the posterior samples.")
+            best_action = np.nan
+            action_mean = np.nan
+            action_std = np.nan
+        else:
+            best_action = float(np.min(finite_action_values))
+            action_mean = float(np.mean(finite_action_values))
+            action_std = float(np.std(finite_action_values))
 
-            # --- Parameter Summaries ---
-            # Extract summary statistics for each inferred parameter using ArviZ
-            summary_df = az.summary(idata, var_names=["base_cost", "base_benefit", "scale_benefit", "eta", "ell", "mean_d"])
+        # --- Parameter Summaries ---
+        # Extract summary statistics for each inferred parameter using ArviZ
+        summary_df = az.summary(idata, var_names=["base_cost", "base_benefit", "scale_benefit", "eta", "ell", "mean_d"])
 
-            def create_parameter_summary(param_name: str) -> ParameterSummary:
-                """Helper to create ParameterSummary object from ArviZ summary."""
-                if param_name not in summary_df.index:
-                    logger.warning(f"Parameter '{param_name}' not found in summary.")
-                    # Return a default ParameterSummary with NaNs
-                    return ParameterSummary(mean=np.nan, sd=np.nan, hdi_3=(np.nan, np.nan), hdi_97=(np.nan, np.nan), mcse_mean=np.nan, mcse_sd=np.nan, ess_bulk=np.nan, ess_tail=np.nan, r_hat=np.nan)
+        def create_parameter_summary(param_name: str) -> ParameterSummary:
+            """Helper to create ParameterSummary object from ArviZ summary."""
+            if param_name not in summary_df.index:
+                logger.warning(f"Parameter '{param_name}' not found in summary.")
+                # Return a default ParameterSummary with NaNs
+                return ParameterSummary(mean=np.nan, sd=np.nan, hdi_3=(np.nan, np.nan), hdi_97=(np.nan, np.nan), mcse_mean=np.nan, mcse_sd=np.nan, ess_bulk=np.nan, ess_tail=np.nan, r_hat=np.nan)
 
-                param_summary = summary_df.loc[param_name]
-                return ParameterSummary(
-                    mean=float(param_summary['mean']),
-                    sd=float(param_summary['sd']),
-                    hdi_3=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Note: ArviZ uses hdi_3% and hdi_97%
-                    hdi_97=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Using the same for both for simplicity, adjust if different HDIs are needed
-                    mcse_mean=float(param_summary['mcse_mean']),
-                    mcse_sd=float(param_summary['mcse_sd']),
-                    ess_bulk=float(param_summary['ess_bulk']),
-                    ess_tail=float(param_summary['ess_tail']),
-                    r_hat=float(param_summary['r_hat'])
-                )
-
-            base_cost_summary = create_parameter_summary("base_cost")
-            base_benefit_summary = create_parameter_summary("base_benefit")
-            scale_benefit_summary = create_parameter_summary("scale_benefit")
-            gp_eta_summary = create_parameter_summary("eta")
-            gp_ell_summary = create_parameter_summary("ell")
-            gp_mean_summary = create_parameter_summary("mean_d")
-
-
-            # Create and return the result object
-            result = PathIntegralOptimizerResult(
-                total_resource=self.total_resource,
-                T=self.T,
-                hbar=self.hbar,
-                num_samples=len(self.actions), # Total samples attempted
-                num_finite_actions=len(finite_action_values),
-
-                base_cost_summary=base_cost_summary,
-                base_benefit_summary=base_benefit_summary,
-                scale_benefit_summary=scale_benefit_summary,
-                gp_eta_summary=gp_eta_summary,
-                gp_ell_summary=gp_ell_summary,
-                gp_mean_summary=gp_mean_summary,
-
-                best_action=best_action,
-                action_mean=action_mean,
-                action_std=action_std,
-                mean_path=mean_path,
-                std_path=std_path
+            param_summary = summary_df.loc[param_name]
+            return ParameterSummary(
+                mean=float(param_summary['mean']),
+                sd=float(param_summary['sd']),
+                hdi_3=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Note: ArviZ uses hdi_3% and hdi_97%
+                hdi_97=(float(param_summary['hdi_3%']), float(param_summary['hdi_97%'])), # Using the same for both for simplicity, adjust if different HDIs are needed
+                mcse_mean=float(param_summary['mcse_mean']),
+                mcse_sd=float(param_summary['mcse_sd']),
+                ess_bulk=float(param_summary['ess_bulk']),
+                ess_tail=float(param_summary['ess_tail']),
+                r_hat=float(param_summary['r_hat'])
             )
-            return result
 
-        except Exception as e:
-            logger.exception(f"Error in generate_summary: {e}")
-            raise
+        base_cost_summary = create_parameter_summary("base_cost")
+        base_benefit_summary = create_parameter_summary("base_benefit")
+        scale_benefit_summary = create_parameter_summary("scale_benefit")
+        gp_eta_summary = create_parameter_summary("eta")
+        gp_ell_summary = create_parameter_summary("ell")
+        gp_mean_summary = create_parameter_summary("mean_d")
+
+
+        # Create and return the result object
+        result = PathIntegralOptimizerResult(
+            total_resource=self.total_resource,
+            T=self.T,
+            hbar=self.hbar,
+            num_samples=len(self.actions), # Total samples attempted
+            num_finite_actions=len(finite_action_values),
+
+            base_cost_summary=base_cost_summary,
+            base_benefit_summary=base_benefit_summary,
+            scale_benefit_summary=scale_benefit_summary,
+            gp_eta_summary=gp_eta_summary,
+            gp_ell_summary=gp_ell_summary,
+            gp_mean_summary=gp_mean_summary,
+
+            best_action=best_action,
+            action_mean=action_mean,
+            action_std=action_std,
+            mean_path=mean_path,
+            std_path=std_path
+        )
+        return result
+        # Removed re-raise
 
     def _calculate_historical_forecasted_metrics(self) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
         """Helper to calculate historical and forecasted cost/benefit."""
@@ -441,42 +419,39 @@ class PathIntegralOptimizer:
             logger.warning("Missing data for historical/forecasted metric calculation.")
             return None, None, None, None
 
-        try:
-            # Access posterior means for parameters
-            base_cost_mean = self.trace.posterior["base_cost"].values.mean()
-            base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
-            scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
-            d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
+        # Removed try...except Exception block
+        # Access posterior means for parameters
+        base_cost_mean = self.trace.posterior["base_cost"].values.mean()
+        base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
+        scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
+        d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
 
-            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
+        mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
 
-            # Calculate historical cost and benefit
-            hist_len = len(self.historical_input)
-            if hist_len > len(d_t_mean):
-                 logger.warning("Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately.")
-                 historical_cost = np.full_like(self.historical_input, np.nan)
-                 historical_benefit = np.full_like(self.historical_input, np.nan)
-            else:
-                historical_d_t = d_t_mean[:hist_len]
-                historical_cost = base_cost_mean * self.historical_input ** historical_d_t
-                historical_benefit = base_benefit_mean * self.historical_input ** scale_benefit_mean
+        # Calculate historical cost and benefit
+        hist_len = len(self.historical_input)
+        if hist_len > len(d_t_mean):
+             logger.warning("Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately.")
+             historical_cost = np.full_like(self.historical_input, np.nan)
+             historical_benefit = np.full_like(self.historical_input, np.nan)
+        else:
+            historical_d_t = d_t_mean[:hist_len]
+            historical_cost = base_cost_mean * self.historical_input ** historical_d_t
+            historical_benefit = base_benefit_mean * self.historical_input ** scale_benefit_mean
 
-            # Calculate forecasted cost and benefit
-            forecast_len = len(mean_forecast_path)
-            if len(d_t_mean) < hist_len + forecast_len:
-                 logger.warning("d_t length is less than historical + forecast length. Cannot calculate forecasted cost/benefit accurately.")
-                 forecast_cost = np.full_like(mean_forecast_path, np.nan)
-                 forecast_benefit = np.full_like(mean_forecast_path, np.nan)
-            else:
-                forecast_d_t = d_t_mean[hist_len : hist_len + forecast_len]
-                forecast_cost = base_cost_mean * mean_forecast_path ** forecast_d_t
-                forecast_benefit = base_benefit_mean * mean_forecast_path ** scale_benefit_mean
+        # Calculate forecasted cost and benefit
+        forecast_len = len(mean_forecast_path)
+        if len(d_t_mean) < hist_len + forecast_len:
+             logger.warning("d_t length is less than historical + forecast length. Cannot calculate forecasted cost/benefit accurately.")
+             forecast_cost = np.full_like(mean_forecast_path, np.nan)
+             forecast_benefit = np.full_like(mean_forecast_path, np.nan)
+        else:
+            forecast_d_t = d_t_mean[hist_len : hist_len + forecast_len]
+            forecast_cost = base_cost_mean * mean_forecast_path ** forecast_d_t
+            forecast_benefit = base_benefit_mean * mean_forecast_path ** scale_benefit_mean
 
-            return historical_cost, historical_benefit, forecast_cost, forecast_benefit
-
-        except Exception as e:
-            logger.exception(f"Error calculating historical/forecasted metrics: {e}")
-            return None, None, None, None
+        return historical_cost, historical_benefit, forecast_cost, forecast_benefit
+        # Removed re-raise
 
 
     def plot_forecast(self, output_file: Optional[str] = None) -> None:
@@ -504,88 +479,86 @@ class PathIntegralOptimizer:
              plot_cost_benefit = True
 
 
-        try:
-            # Create figure with subplots
-            fig, axes = plt.subplots(3, 1, figsize=(14, 18))
-            ax1, ax2, ax3 = axes
+        # Removed try...except Exception block
+        # Create figure with subplots
+        fig, axes = plt.subplots(3, 1, figsize=(14, 18))
+        ax1, ax2, ax3 = axes
 
-            # Calculate time axis for forecast
-            last_historical_time = self.historical_t[-1]
-            time_step = 1
-            if len(self.historical_t) > 1:
-                time_step = self.historical_t[1] - self.historical_t[0]
-            forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
+        # Calculate time axis for forecast
+        last_historical_time = self.historical_t[-1]
+        time_step = 1
+        if len(self.historical_t) > 1:
+            time_step = self.historical_t[1] - self.historical_t[0]
+        forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
 
-            # Get mean forecast path
-            mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
+        # Get mean forecast path
+        mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
 
-            # Plot input data
-            ax1.plot(self.historical_t, self.historical_input, label="Historical Input",
-                    color='blue', marker='o', linestyle='-')
-            ax1.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input",
-                    color='red', marker='x', linestyle='--')
-            ax1.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
-                       label="Forecast Horizon Start")
-            ax1.set_xlabel("Time (t)")
-            ax1.set_ylabel("Allocation (x(t))")
-            ax1.set_title("Historical Input and Mean Forecasted Allocation")
-            ax1.legend()
-            ax1.grid(True)
+        # Plot input data
+        ax1.plot(self.historical_t, self.historical_input, label="Historical Input",
+                color='blue', marker='o', linestyle='-')
+        ax1.plot(forecast_time_axis, mean_forecast_path, label="Mean Forecasted Input",
+                color='red', marker='x', linestyle='--')
+        ax1.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                   label="Forecast Horizon Start")
+        ax1.set_xlabel("Time (t)")
+        ax1.set_ylabel("Allocation (x(t))")
+        ax1.set_title("Historical Input and Mean Forecasted Allocation")
+        ax1.legend()
+        ax1.grid(True)
 
-            if plot_cost_benefit:
-                historical_cost, historical_benefit, forecast_cost, forecast_benefit = self._calculate_historical_forecasted_metrics()
+        if plot_cost_benefit:
+            historical_cost, historical_benefit, forecast_cost, forecast_benefit = self._calculate_historical_forecasted_metrics()
 
-                if historical_cost is not None and historical_benefit is not None and forecast_cost is not None and forecast_benefit is not None:
-                    # Plot historical cost
-                    ax2.plot(self.historical_t, historical_cost,
-                            label="Historical Cost (Estimated)", color='green', marker='o', linestyle='-')
+            if historical_cost is not None and historical_benefit is not None and forecast_cost is not None and forecast_benefit is not None:
+                # Plot historical cost
+                ax2.plot(self.historical_t, historical_cost,
+                        label="Historical Cost (Estimated)", color='green', marker='o', linestyle='-')
 
-                    # Plot forecasted cost
-                    ax2.plot(forecast_time_axis, forecast_cost,
-                            label="Forecasted Cost (Mean)", color='darkgreen', marker='x', linestyle='--')
+                # Plot forecasted cost
+                ax2.plot(forecast_time_axis, forecast_cost,
+                        label="Forecasted Cost (Mean)", color='darkgreen', marker='x', linestyle='--')
 
-                    # Plot historical benefit
-                    ax3.plot(self.historical_t, historical_benefit,
-                            label="Historical Benefit (Estimated)", color='orange', marker='o', linestyle='-')
+                # Plot historical benefit
+                ax3.plot(self.historical_t, historical_benefit,
+                        label="Historical Benefit (Estimated)", color='orange', marker='o', linestyle='-')
 
-                    # Plot forecasted benefit
-                    ax3.plot(forecast_time_axis, forecast_benefit,
-                            label="Forecasted Benefit (Mean)", color='darkorange', marker='x', linestyle='--')
-                else:
-                    logger.warning("Skipping cost/benefit plots due to calculation errors.")
-
-
-            ax2.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
-                       label="Forecast Horizon Start")
-            ax2.set_xlabel("Time (t)")
-            ax2.set_ylabel("Cost Value")
-            ax2.set_title("Historical and Forecasted Cost")
-            ax2.legend()
-            ax2.grid(True)
-
-            ax3.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
-                       label="Forecast Horizon Start")
-            ax3.set_xlabel("Time (t)")
-            ax3.set_ylabel("Benefit Value")
-            ax3.set_title("Historical and Forecasted Benefit")
-            ax3.legend()
-            ax3.grid(True)
-
-            # Add overall title and adjust layout
-            plt.suptitle("Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.95)
-            plt.tight_layout()
-
-            # Save or show the plot
-            if output_file:
-                plt.savefig(output_file)
-                logger.info(f"Forecast plot saved to {output_file}")
+                # Plot forecasted benefit
+                ax3.plot(forecast_time_axis, forecast_benefit,
+                        label="Forecasted Benefit (Mean)", color='darkorange', marker='x', linestyle='--')
             else:
-                plt.show()
-                logger.info("Forecast plot displayed")
+                logger.warning("Skipping cost/benefit plots due to calculation errors.")
 
-        except Exception as e:
-            logger.exception(f"Error in plot_forecast: {e}")
-            # Do not re-raise, just log, so other operations can continue if needed.
+
+        ax2.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                   label="Forecast Horizon Start")
+        ax2.set_xlabel("Time (t)")
+        ax2.set_ylabel("Cost Value")
+        ax2.set_title("Historical and Forecasted Cost")
+        ax2.legend()
+        ax2.grid(True)
+
+        ax3.axvline(x=last_historical_time, color='gray', linestyle=':', linewidth=2,
+                   label="Forecast Horizon Start")
+        ax3.set_xlabel("Time (t)")
+        ax3.set_ylabel("Benefit Value")
+        ax3.set_title("Historical and Forecasted Benefit")
+        ax3.legend()
+        ax3.grid(True)
+
+        # Add overall title and adjust layout
+        plt.suptitle("Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.95)
+        plt.tight_layout()
+
+        # Save or show the plot
+        if output_file:
+            plt.savefig(output_file)
+            logger.info(f"Forecast plot saved to {output_file}")
+        else:
+            plt.show()
+            logger.info("Forecast plot displayed")
+        # Do not re-raise, just log, so other operations can continue if needed.
+
 
     @staticmethod
     def from_data(
