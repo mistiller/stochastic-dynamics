@@ -151,6 +151,8 @@ class PathIntegralOptimizer:
              # logger.warning(f"Floating point error in _compute_action_numpy. Error: {fpe}")
              return np.inf # Return inf without logging for every sample
         # Removed general Exception catch
+        except Exception as e:
+            raise RuntimeError(e) from e
 
     def run_mcmc(self) -> None:
         """Runs the NUTS simulation inferring 'base_cost', 'base_benefit', 'scale_benefit', and the path 'x_path'."""
@@ -416,8 +418,7 @@ class PathIntegralOptimizer:
     def _calculate_historical_forecasted_metrics(self) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
         """Helper to calculate historical and forecasted cost/benefit."""
         if self.historical_input is None or self.historical_t is None or self.trace is None or self.mcmc_paths is None or self.T is None or self.T <= 0:
-            logger.warning("Missing data for historical/forecasted metric calculation.")
-            return None, None, None, None
+            raise ValueError("Missing data for historical/forecasted metric calculation.")
 
         # Removed try...except Exception block
         # Access posterior means for parameters
@@ -589,68 +590,62 @@ class PathIntegralOptimizer:
         )
 
         logger.info('Estimating parameters from input data to define priors...')
-        try:
-            # ParameterEstimator returns ParameterEstimationResult which contains
-            # {'mu': ..., 'sigma': ...} for each estimated parameter.
-            parameters:ParameterEstimationResult=ParameterEstimator(data) \
-                .get_parameters()
-        except Exception as e:
-            logger.exception(f"Error during parameter estimation: {e}")
-            raise
+
+        # ParameterEstimator returns ParameterEstimationResult which contains
+        # {'mu': ..., 'sigma': ...} for each estimated parameter.
+        parameters:ParameterEstimationResult=ParameterEstimator(data) \
+            .get_parameters()
 
         # Construct the full prior dictionaries from the estimation results
         # based on the desired distribution types.
         # Use Pydantic models for validation during construction
-        try:
-            base_cost_prior_dict = {
-                'dist': 'TruncatedNormal',
-                'mu': parameters.base_cost['mu'],
-                'sigma': parameters.base_cost['sigma'],
-                'lower': 0.0 # base_cost must be positive
-            }
-            base_benefit_prior_dict = {
-                'dist': 'TruncatedNormal',
-                'mu': parameters.base_benefit['mu'],
-                'sigma': parameters.base_benefit['sigma'],
-                'lower': 0.0 # base_benefit must be positive
-            }
-            scale_benefit_prior_dict = {
-                'dist': 'Beta',
-                'mu': parameters.scale_benefit['mu'],
-                'sigma': parameters.scale_benefit['sigma']
-                # Beta distribution handles the (0, 1) range
-            }
-            gp_eta_prior_dict = {
-                'dist': 'HalfNormal',
-                'sigma': parameters.gp_eta_prior['sigma'] # HalfNormal takes sigma
-            }
-            gp_ell_prior_dict = {
-                'dist': 'Gamma',
-                'mu': parameters.gp_ell_prior['mu'], # Gamma conversion from mu/sigma
-                'sigma': parameters.gp_ell_prior['sigma']
-            }
-            gp_mean_prior_dict = {
-                'dist': 'Normal',
-                'mu': parameters.gp_mean_prior['mu'],
-                'sigma': parameters.gp_mean_prior['sigma']
-            }
 
-            # Pass the constructed prior dictionaries to the constructor
-            return PathIntegralOptimizer(
-                base_cost_prior=base_cost_prior_dict,
-                base_benefit_prior=base_benefit_prior_dict,
-                scale_benefit_prior=scale_benefit_prior_dict,
-                gp_eta_prior=gp_eta_prior_dict,
-                gp_ell_prior=gp_ell_prior_dict,
-                gp_mean_prior=gp_mean_prior_dict,
-                total_resource=total_resource,
-                T=forecast_steps, # T is the forecast period length
-                hbar=hbar,
-                num_steps=num_steps,
-                burn_in=burn_in,
-                historical_t=_t_hist,
-                historical_input=input
-            )
-        except Exception as e:
-            logger.exception(f"Error constructing PathIntegralOptimizer from estimated parameters: {e}")
-            raise
+        base_cost_prior_dict = {
+            'dist': 'TruncatedNormal',
+            'mu': parameters.base_cost['mu'],
+            'sigma': parameters.base_cost['sigma'],
+            'lower': 0.0 # base_cost must be positive
+        }
+        base_benefit_prior_dict = {
+            'dist': 'TruncatedNormal',
+            'mu': parameters.base_benefit['mu'],
+            'sigma': parameters.base_benefit['sigma'],
+            'lower': 0.0 # base_benefit must be positive
+        }
+        scale_benefit_prior_dict = {
+            'dist': 'Beta',
+            'mu': parameters.scale_benefit['mu'],
+            'sigma': parameters.scale_benefit['sigma']
+            # Beta distribution handles the (0, 1) range
+        }
+        gp_eta_prior_dict = {
+            'dist': 'HalfNormal',
+            'sigma': parameters.gp_eta_prior['sigma'] # HalfNormal takes sigma
+        }
+        gp_ell_prior_dict = {
+            'dist': 'Gamma',
+            'mu': parameters.gp_ell_prior['mu'], # Gamma conversion from mu/sigma
+            'sigma': parameters.gp_ell_prior['sigma']
+        }
+        gp_mean_prior_dict = {
+            'dist': 'Normal',
+            'mu': parameters.gp_mean_prior['mu'],
+            'sigma': parameters.gp_mean_prior['sigma']
+        }
+
+        # Pass the constructed prior dictionaries to the constructor
+        return PathIntegralOptimizer(
+            base_cost_prior=base_cost_prior_dict,
+            base_benefit_prior=base_benefit_prior_dict,
+            scale_benefit_prior=scale_benefit_prior_dict,
+            gp_eta_prior=gp_eta_prior_dict,
+            gp_ell_prior=gp_ell_prior_dict,
+            gp_mean_prior=gp_mean_prior_dict,
+            total_resource=total_resource,
+            T=forecast_steps, # T is the forecast period length
+            hbar=hbar,
+            num_steps=num_steps,
+            burn_in=burn_in,
+            historical_t=_t_hist,
+            historical_input=input
+        )
