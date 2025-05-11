@@ -29,7 +29,6 @@ Your code MUST conform to PEP 8. Key directives include:
     - Use `is` or `is not` for `None` comparisons (e.g., `if my_var is None:`).
     - Use `isinstance()` for type checking (e.g., `isinstance(obj, int)`).
     - For sequences (strings, lists, tuples), check for emptiness directly (e.g., `if not my_list:`).
-- **Reference:** [PEP 8](https://peps.python.org/pep-0008/)
 
 ### 2. PEP 257: Docstring Conventions
 Your generated code MUST include comprehensive docstrings.
@@ -38,20 +37,17 @@ Your generated code MUST include comprehensive docstrings.
     - First line: Concise summary of the object's purpose.
     - Multi-line: Summary line, then a blank line, then a more detailed explanation.
     - Describe arguments, return values, and any exceptions raised.
-- **Reference:** [PEP 257](https://peps.python.org/pep-0257/)
 
 ### 3. PEP 20: The Zen of Python
 Let the principles of PEP 20 guide your code generation. Strive for code that is:
 - Beautiful, Explicit, Simple, Readable.
 - "There should be one-- and preferably only one --obvious way to do it."
 - If the implementation is hard to explain, it's a bad idea.
-- **Reference:** [PEP 20](https://peps.python.org/pep-0020/) (View with `import this`)
 
 ### 4. Type Hinting (PEP 484 and related)
 Your code MUST use type hints for all function signatures (arguments and return types) and variable annotations where appropriate.
 - Use modern type hinting syntax (e.g., `list[int]` instead of `typing.List[int]` if Python 3.9+ is assumed, which it is for 3.12).
 - Follow PEP 484, PEP 526, PEP 544, PEP 585, PEP 604, and PEP 695.
-- **Reference:** [PEP 484](https://peps.python.org/pep-0484/)
 
 ## Project-Specific Instructions (Adhere Strictly)
 
@@ -79,4 +75,3 @@ Your code MUST use type hints for all function signatures (arguments and return 
 - **Do NOT write comments that merely state *what* the code is doing if the code itself is self-explanatory.**
 - **Avoid non-documenting comments,** such as "fixed bug," "removed this," "added that," or comments stating the obvious.
 - Docstrings (PEP 257) are for API documentation; regular comments are for implementation clarity.
-```
