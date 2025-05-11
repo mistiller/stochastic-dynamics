@@ -2,28 +2,32 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, Any
 
+
 @dataclass
 class ParameterSummary:
     """Holds summary statistics for an inferred parameter."""
+
     mean: float
     sd: float
-    hdi_3: tuple[float, float] # 3% HDI
-    hdi_97: tuple[float, float] # 97% HDI
+    hdi_3: tuple[float, float]  # 3% HDI
+    hdi_97: tuple[float, float]  # 97% HDI
     mcse_mean: float
     mcse_sd: float
     ess_bulk: float
     ess_tail: float
     r_hat: float
 
+
 @dataclass
 class PathIntegralOptimizerResult:
     """Holds the results of the Path Integral Optimization."""
+
     # Fixed/Input Parameters
     total_resource: float
     T: int
     hbar: float
-    num_samples: int # Total samples attempted
-    num_finite_actions: int # Samples with finite action
+    num_samples: int  # Total samples attempted
+    num_finite_actions: int  # Samples with finite action
 
     # Summaries of Inferred Parameters (Posterior)
     base_cost_summary: ParameterSummary
@@ -34,10 +38,10 @@ class PathIntegralOptimizerResult:
     gp_mean_summary: ParameterSummary
 
     # Path and Action Summaries
-    best_action: float # Minimum finite action found
-    action_mean: float # Mean of finite actions
+    best_action: float  # Minimum finite action found
+    action_mean: float  # Mean of finite actions
     action_std: float  # Standard deviation of finite actions
-    mean_path: np.ndarray # Mean allocation path
+    mean_path: np.ndarray  # Mean allocation path
     std_path: np.ndarray  # Standard deviation of allocation path
 
     def __str__(self) -> str:
@@ -60,9 +64,11 @@ class PathIntegralOptimizerResult:
             f"Best path action: {self.best_action:.4f}",
             f"Mean action: {self.action_mean:.4f} ± {self.action_std:.4f}",
             "Mean allocation per time step:",
-            "Time : Mean ± Std Dev"
+            "Time : Mean ± Std Dev",
         ]
         for t in range(self.T):
-            summary_lines.append(f"{t+1:2d}   : {self.mean_path[t]:.4f} ± {self.std_path[t]:.4f}")
+            summary_lines.append(
+                f"{t+1:2d}   : {self.mean_path[t]:.4f} ± {self.std_path[t]:.4f}"
+            )
         summary_lines.append("===================================")
         return "\n".join(summary_lines)

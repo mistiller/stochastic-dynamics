@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 import numpy as np
 
+
 @dataclass
 class Dataset:
-    t:np.array
-    input:np.array
-    cost:np.array
-    benefit:np.array
+    t: np.array
+    input: np.array
+    cost: np.array
+    benefit: np.array
 
     def validate(self):
         if not isinstance(self.t, np.ndarray):
@@ -19,7 +20,9 @@ class Dataset:
             raise TypeError("benefit must be a numpy array")
 
         if len(self.t) != len(self.input):
-            raise ValueError(f"t and input must have the same length ({len(self.t)}:{len(self.input)})")
+            raise ValueError(
+                f"t and input must have the same length ({len(self.t)}:{len(self.input)})"
+            )
         if len(self.t) != len(self.cost):
             raise ValueError("t and cost must have the same length")
         if len(self.t) != len(self.benefit):

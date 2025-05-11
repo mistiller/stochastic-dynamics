@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 import arviz as az
 
+
 @dataclass
 class ParameterEstimationResult:
     """Holds the results of parameter estimation."""
+
     base_cost: Dict[str, Any]
     base_benefit: Dict[str, Any]
     scale_benefit: Dict[str, Any]
