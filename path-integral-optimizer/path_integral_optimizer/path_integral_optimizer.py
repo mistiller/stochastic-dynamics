@@ -150,7 +150,6 @@ class PathIntegralOptimizer:
         except FloatingPointError as fpe:
              # logger.warning(f"Floating point error in _compute_action_numpy. Error: {fpe}")
              return np.inf # Return inf without logging for every sample
-        # Removed general Exception catch
         except Exception as e:
             raise RuntimeError(e) from e
 
@@ -425,16 +424,17 @@ class PathIntegralOptimizer:
         base_cost_mean = self.trace.posterior["base_cost"].values.mean()
         base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
         scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
-        d_t_mean = self.trace.posterior["d_t"].values.mean(dim=("chain", "draw")).values
+        # Corrected: Call mean directly on the DataArray, not the .values NumPy array
+        d_t_mean = self.trace.posterior["d_t"].mean(dim=("chain", "draw")).values
 
         mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
 
         # Calculate historical cost and benefit
         hist_len = len(self.historical_input)
         if hist_len > len(d_t_mean):
-             logger.warning("Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately.")
-             historical_cost = np.full_like(self.historical_input, np.nan)
-             historical_benefit = np.full_like(self.historical_input, np.nan)
+                 logger.warning("Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately.")
+                 historical_cost = np.full_like(self.historical_input, np.nan)
+                 historical_benefit = np.full_like(self.historical_input, np.nan)
         else:
             historical_d_t = d_t_mean[:hist_len]
             historical_cost = base_cost_mean * self.historical_input ** historical_d_t
