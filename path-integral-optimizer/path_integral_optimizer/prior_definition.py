@@ -9,7 +9,6 @@ class PriorDefinition(BaseModel):
     """Base model for prior definitions."""
 
     dist: str = Field(..., description="Name of the PyMC distribution")
-    # Allow arbitrary parameters for the distribution
     params: Dict[str, Any] = Field(
         default_factory=dict, description="Parameters for the distribution"
     )
@@ -29,7 +28,6 @@ class PriorDefinition(BaseModel):
             if dist_class is None:
                 raise ValueError(f"Unknown distribution name: {self.dist}")
 
-            # Special handling for distributions that can be defined by mu/sigma
             if self.dist in ["Beta", "Gamma"]:
                 if "mu" in self.params and "sigma" in self.params:
                     mu = self.params["mu"]
@@ -40,7 +38,6 @@ class PriorDefinition(BaseModel):
                         )
 
                     if self.dist == "Beta":
-                        # Convert mean/std to alpha/beta for Beta
                         if not (0 < mu < 1):
                             logger.warning(
                                 f"Mean {mu:.4f} for Beta prior '{name}' is not in (0, 1). Clamping."
@@ -70,7 +67,6 @@ class PriorDefinition(BaseModel):
                         )
 
                     elif self.dist == "Gamma":
-                        # Convert mean/std to alpha/beta for Gamma
                         variance = sigma**2
                         if variance <= 0:
                             logger.warning(
@@ -86,28 +82,23 @@ class PriorDefinition(BaseModel):
                             f"Converted mu={mu:.3f}, sigma={sigma:.3f} to Gamma(alpha={params['alpha']:.3f}, beta={params['beta']:.3f}) for '{name}'."
                         )
                 else:
-                    # Use provided alpha/beta or other params directly
                     params = self.params
 
             elif self.dist == "TruncatedNormal":
-                # Ensure lower is present for this use case
                 if "lower" not in self.params:
                     raise ValueError(
                         f"TruncatedNormal prior for {name} requires 'lower'. Got {self.params}"
                     )
                 params = self.params
-                # Ensure sigma is positive
                 if "sigma" in params:
                     params["sigma"] = max(params["sigma"], 1e-6)
 
             elif self.dist in ["HalfNormal", "Normal"]:
                 params = self.params
-                # Ensure sigma is positive
                 if "sigma" in params:
                     params["sigma"] = max(params["sigma"], 1e-6)
 
             else:
-                # For other distributions, use parameters directly
                 params = self.params
 
             return dist_class(name, **params)

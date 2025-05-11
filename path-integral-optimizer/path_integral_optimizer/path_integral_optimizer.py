@@ -103,12 +103,9 @@ class PathIntegralOptimizer:
         self.historical_t: Optional[np.ndarray] = historical_t
         self.historical_input: Optional[np.ndarray] = historical_input
 
-        # Initialize containers
-        self.mcmc_paths: Optional[np.ndarray] = None  # Store all paths from trace later
-        self.actions: Optional[np.ndarray] = (
-            None  # Store actions for each sampled path/parameter combo
-        )
-        self.trace: Optional[az.InferenceData] = None  # Store the full InferenceData
+        self.mcmc_paths: Optional[np.ndarray] = None
+        self.actions: Optional[np.ndarray] = None
+        self.trace: Optional[az.InferenceData] = None
 
     def compute_action(
         self,
@@ -119,7 +116,6 @@ class PathIntegralOptimizer:
         d_t: pt.TensorVariable,
     ) -> pt.TensorVariable:
         """Computes the action using PyTensor, accepting parameters as variables."""
-        # No change needed here, PyTensor handles symbolic computation
         benefit = base_benefit * x_path**scale_benefit
         cost = base_cost * x_path**d_t
         return -pt.sum(benefit - cost)
@@ -134,7 +130,6 @@ class PathIntegralOptimizer:
     ) -> float:
         """Computes the action using NumPy, accepting specific parameter values."""
         try:
-            # Basic validation for inputs
             if not (
                 np.isfinite(base_cost)
                 and np.isfinite(base_benefit)
@@ -142,38 +137,30 @@ class PathIntegralOptimizer:
             ):
                 return np.inf
 
-            # Add clipping/validation for parameters
             base_cost = np.clip(base_cost, a_min=1e-12, a_max=1e6)
             base_benefit = np.clip(base_benefit, a_min=0.0, a_max=1e6)
             scale_benefit = np.clip(scale_benefit, a_min=0.0, a_max=1.0)
 
-            # Ensure x_path has no non-positive values before exponentiation, esp. with scale_benefit<1
-            # Use a small epsilon for numerical stability if needed, but clipping might be better handled
-            # by ensuring the MCMC samples stay positive (e.g., through parameterization).
-            # For now, check and return inf if non-positive values are present.
             if np.any(x_path <= 0):
-                return np.inf  # Return inf without logging for every sample
+                return np.inf
 
-            # Use a small epsilon for numerical stability in power calculation if needed
-            x_safe = x_path + 1e-12  # Add epsilon to avoid log(0) or 0^power issues
+            x_safe = x_path + 1e-12
 
             benefit = base_benefit * np.power(x_safe, scale_benefit)
             cost = base_cost * np.power(x_safe, d_t)
 
-            # Check for non-finite results after calculation
             if not np.all(np.isfinite(benefit)) or not np.all(np.isfinite(cost)):
-                return np.inf  # Return inf without logging for every sample
+                return np.inf
 
             action = -np.sum(benefit - cost)
 
             if not np.isfinite(action):
-                return np.inf  # Return inf without logging for every sample
+                return np.inf
 
             return float(action)
 
-        except FloatingPointError as fpe:
-            # logger.warning(f"Floating point error in _compute_action_numpy. Error: {fpe}")
-            return np.inf  # Return inf without logging for every sample
+        except FloatingPointError:
+            return np.inf
         except Exception as e:
             raise RuntimeError(e) from e
 
@@ -182,9 +169,7 @@ class PathIntegralOptimizer:
         logger.info(
             "Starting PyTensor/PyMC MCMC sampling for x_path, base_cost, base_benefit, scale_benefit, and GP-based d(t)..."
         )
-        # Removed try...except Exception block
         with pm.Model(coords={"t": np.arange(self.T)}) as model:
-            # --- Priors for Parameters ---
             base_cost = self.base_cost_prior_def.create_pymc_distribution("base_cost")
             base_benefit = self.base_benefit_prior_def.create_pymc_distribution(
                 "base_benefit"
@@ -193,47 +178,36 @@ class PathIntegralOptimizer:
                 "scale_benefit"
             )
 
-            # --- GP for d(t): Prior Hyperparameters ---
             eta = self.gp_eta_prior_def.create_pymc_distribution("eta")
             ell = self.gp_ell_prior_def.create_pymc_distribution("ell")
             mean_d = self.gp_mean_prior_def.create_pymc_distribution("mean_d")
 
-            # --- GP Covariance Function ---
-            # Ensure ell is positive and add jitter
             cov_d = eta**2 * pm.gp.cov.ExpQuad(
                 1, ls=pt.as_tensor_variable(ell + 1e-9)
             ) + pm.gp.cov.WhiteNoise(1e-6)
 
-            # --- GP Definition ---
-            X = np.arange(1, self.T + 1)[:, None]  # Input: time steps as 2D array
+            X = np.arange(1, self.T + 1)[:, None]
             X = (X - np.mean(X)) / np.std(X)  # Standardize input for GP
 
             gp_d = pm.gp.Latent(mean_func=pm.gp.mean.Constant(mean_d), cov_func=cov_d)
-            f_d = gp_d.prior("f_d", X=X)  # Latent GP function values
-            # Transform f_d to ensure d(t) > 1
-            # softplus(x) > 0, so softplus(x) + 1 > 1. Add 1e-6 for numerical stability.
+            f_d = gp_d.prior("f_d", X=X)
+            # Transform f_d to ensure d(t) > 1 (softplus(x) > 0)
             d_t = pm.Deterministic("d_t", pt.softplus(f_d) + 1 + 1e-6)
 
-            # --- Prior for Path (Reparameterized) ---
-            # Use a Dirichlet distribution over the raw values before softmax
-            # This encourages the sum to be total_resource
+            # Dirichlet prior encourages the sum to be total_resource
             x_raw = pm.Dirichlet(
                 "x_raw", a=np.ones(self.T), dims="t"
-            )  # Dirichlet prior
+            )
             x_path = pm.Deterministic("x_path", x_raw * self.total_resource, dims="t")
 
-            # --- Potentials ---
-            # Action Potential: depends on sampled base_cost, base_benefit, scale_benefit and fixed self.hbar
             action = self.compute_action(
                 x_path, base_cost, base_benefit, scale_benefit, d_t
             )
-            # Ensure action is finite before using in potential
             finite_action = pt.switch(
                 pt.isnan(action) | pt.isinf(action), -np.inf, -action / self.hbar
             )
             pm.Potential("action", finite_action)
 
-            # --- Sampling ---
             self.trace = pm.sample(
                 draws=self.num_steps,
                 tune=self.burn_in,
@@ -246,16 +220,12 @@ class PathIntegralOptimizer:
 
         logger.info("MCMC sampling finished. Processing trace...")
 
-        # Extract posterior samples
-        # Shape: (chains * draws, T) for path
         self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
-        # Shape: (chains * draws,) for params
         c_samples = self.trace.posterior["base_cost"].values.flatten()
         a_samples = self.trace.posterior["base_benefit"].values.flatten()
         b_samples = self.trace.posterior["scale_benefit"].values.flatten()
         d_samples = self.trace.posterior["d_t"].values.reshape(-1, self.T)
 
-        # Calculate action for each sample using corresponding sampled parameters
         num_samples = len(self.mcmc_paths)
         self.actions = np.array(
             [
@@ -280,8 +250,6 @@ class PathIntegralOptimizer:
                 "No finite actions computed. Cannot plot top paths or generate meaningful summary."
             )
 
-        # Removed re-raise
-
     def _get_top_paths_indices(self, top_percent: float) -> np.ndarray:
         """Helper to get indices of top paths based on action."""
         if self.actions is None:
@@ -292,7 +260,7 @@ class PathIntegralOptimizer:
         sorted_finite_indices = finite_indices[np.argsort(self.actions[finite_indices])]
         num_top_paths = max(
             1, int(len(finite_indices) * top_percent / 100)
-        )  # Calculate based on finite actions
+        )
         return sorted_finite_indices[:num_top_paths]
 
     def plot_top_paths(self, top_percent: float = 5.0) -> None:
@@ -312,16 +280,13 @@ class PathIntegralOptimizer:
             )
             return
 
-        # Removed try...except Exception block
         plt.figure(figsize=(12, 7))
 
-        # Plot all top paths with transparency
         for idx in top_indices:
             plt.plot(
                 range(1, self.T + 1), self.mcmc_paths[idx], color="blue", alpha=0.3
             )
 
-        # Calculate and plot mean of top paths
         top_paths = self.mcmc_paths[top_indices]
         mean_top_path = np.mean(top_paths, axis=0)
         plt.plot(
@@ -342,7 +307,6 @@ class PathIntegralOptimizer:
         plt.grid(True)
         plt.tight_layout()
         plt.show()
-        # Removed re-raise
 
     def plot(self, top_percent: float = 5.0) -> None:
         """Diagnostic plot showing distribution of action values with vertical line at mean of top paths.
@@ -359,16 +323,13 @@ class PathIntegralOptimizer:
             logger.warning("No finite actions found. Cannot create diagnostic plot.")
             return
 
-        # Removed try...except Exception block
         top_indices = self._get_top_paths_indices(top_percent)
         top_actions = self.actions[top_indices]
 
         plt.figure(figsize=(12, 7))
 
-        # Plot KDE of all finite actions
         az.plot_kde(finite_actions, plot_kwargs={"color": "lightblue"})
 
-        # Add vertical line for mean of top paths
         mean_top_action = np.mean(top_actions) if len(top_actions) > 0 else np.nan
         if np.isfinite(mean_top_action):
             plt.axvline(
@@ -388,7 +349,6 @@ class PathIntegralOptimizer:
         plt.grid(True)
         plt.tight_layout()
         plt.show()
-        # Removed re-raise
 
     def generate_summary(self) -> PathIntegralOptimizerResult | None:
         """Generates summary of the MCMC results.
@@ -397,18 +357,15 @@ class PathIntegralOptimizer:
             PathIntegralOptimizerResult | None: An object containing the summary results,
                                                 or None if no trace is available.
         """
-        # Removed try...except Exception block
         if not hasattr(self, "trace") or self.trace is None:
             logger.warning("No trace collected. Cannot generate summary.")
             return None
 
-        idata = self.trace  # trace is already InferenceData
+        idata = self.trace
 
-        # Get summary statistics for path
         mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
         std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
 
-        # Use pre-calculated actions
         finite_action_values = self.actions[np.isfinite(self.actions)]
 
         if len(finite_action_values) == 0:
@@ -421,8 +378,6 @@ class PathIntegralOptimizer:
             action_mean = float(np.mean(finite_action_values))
             action_std = float(np.std(finite_action_values))
 
-        # --- Parameter Summaries ---
-        # Extract summary statistics for each inferred parameter using ArviZ
         summary_df = az.summary(
             idata,
             var_names=[
@@ -459,11 +414,11 @@ class PathIntegralOptimizer:
                 hdi_3=(
                     float(param_summary["hdi_3%"]),
                     float(param_summary["hdi_97%"]),
-                ),  # Note: ArviZ uses hdi_3% and hdi_97%
+                ),
                 hdi_97=(
                     float(param_summary["hdi_3%"]),
                     float(param_summary["hdi_97%"]),
-                ),  # Using the same for both for simplicity, adjust if different HDIs are needed
+                ),
                 mcse_mean=float(param_summary["mcse_mean"]),
                 mcse_sd=float(param_summary["mcse_sd"]),
                 ess_bulk=float(param_summary["ess_bulk"]),
@@ -498,7 +453,6 @@ class PathIntegralOptimizer:
             std_path=std_path,
         )
         return result
-        # Removed re-raise
 
     def _calculate_historical_forecasted_metrics(
         self,
@@ -521,12 +475,9 @@ class PathIntegralOptimizer:
                 "Missing data for historical/forecasted metric calculation."
             )
 
-        # Removed try...except Exception block
-        # Access posterior means for parameters
         base_cost_mean = self.trace.posterior["base_cost"].values.mean()
         base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
         scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
-        # Corrected: Call mean directly on the DataArray, not the .values NumPy array
         d_t_mean = self.trace.posterior["d_t"].mean(dim=("chain", "draw")).values
 
         mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
@@ -562,7 +513,6 @@ class PathIntegralOptimizer:
             )
 
         return historical_cost, historical_benefit, forecast_cost, forecast_benefit
-        # Removed re-raise
 
     def plot_forecast(self, output_file: Optional[str] = None) -> None:
         """
@@ -587,13 +537,10 @@ class PathIntegralOptimizer:
             logger.warning(
                 "No MCMC trace available. Cannot calculate historical/forecasted cost/benefit."
             )
-            # Still plot input if possible
             plot_cost_benefit = False
         else:
             plot_cost_benefit = True
 
-        # Removed try...except Exception block
-        # Create figure with subplots
         fig, axes = plt.subplots(3, 1, figsize=(14, 18))
         ax1, ax2, ax3 = axes
 
@@ -722,14 +669,12 @@ class PathIntegralOptimizer:
         )
         plt.tight_layout()
 
-        # Save or show the plot
         if output_file:
             plt.savefig(output_file)
             logger.info(f"Forecast plot saved to {output_file}")
         else:
             plt.show()
             logger.info("Forecast plot displayed")
-        # Do not re-raise, just log, so other operations can continue if needed.
 
     @staticmethod
     def from_data(
@@ -756,41 +701,34 @@ class PathIntegralOptimizer:
 
         logger.info("Estimating parameters from input data to define priors...")
 
-        # ParameterEstimator returns ParameterEstimationResult which contains
-        # {'mu': ..., 'sigma': ...} for each estimated parameter.
         parameters: ParameterEstimationResult = ParameterEstimator(
             data
         ).get_parameters()
-
-        # Construct the full prior dictionaries from the estimation results
-        # based on the desired distribution types.
-        # Use Pydantic models for validation during construction
 
         base_cost_prior_dict = {
             "dist": "TruncatedNormal",
             "mu": parameters.base_cost["mu"],
             "sigma": parameters.base_cost["sigma"],
-            "lower": 0.0,  # base_cost must be positive
+            "lower": 0.0,
         }
         base_benefit_prior_dict = {
             "dist": "TruncatedNormal",
             "mu": parameters.base_benefit["mu"],
             "sigma": parameters.base_benefit["sigma"],
-            "lower": 0.0,  # base_benefit must be positive
+            "lower": 0.0,
         }
         scale_benefit_prior_dict = {
             "dist": "Beta",
             "mu": parameters.scale_benefit["mu"],
             "sigma": parameters.scale_benefit["sigma"],
-            # Beta distribution handles the (0, 1) range
         }
         gp_eta_prior_dict = {
             "dist": "HalfNormal",
-            "sigma": parameters.gp_eta_prior["sigma"],  # HalfNormal takes sigma
+            "sigma": parameters.gp_eta_prior["sigma"],
         }
         gp_ell_prior_dict = {
             "dist": "Gamma",
-            "mu": parameters.gp_ell_prior["mu"],  # Gamma conversion from mu/sigma
+            "mu": parameters.gp_ell_prior["mu"],
             "sigma": parameters.gp_ell_prior["sigma"],
         }
         gp_mean_prior_dict = {
@@ -799,7 +737,6 @@ class PathIntegralOptimizer:
             "sigma": parameters.gp_mean_prior["sigma"],
         }
 
-        # Pass the constructed prior dictionaries to the constructor
         return PathIntegralOptimizer(
             base_cost_prior=base_cost_prior_dict,
             base_benefit_prior=base_benefit_prior_dict,
