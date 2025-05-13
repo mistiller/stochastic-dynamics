@@ -49,16 +49,16 @@ $$\mathcal{L} = \sum_{t=1}^{12} \left[ a x(t)^b - c x(t)^{d(t)} \right] - \lambd
 The Karush-Kuhn-Tucker conditions reveal the shadow price's limitations:
 
 1. **Stationarity**:
-$$ \frac{\partial\mathcal{L}}{\partial x(t)} = a b x(t)^{b-1} - c d(t) x(t)^{d(t)-1} - \lambda = 0 \quad \forall t $$
+$$\frac{\partial\mathcal{L}}{\partial x(t)} = a b x(t)^{b-1} - c d(t) x(t)^{d(t)-1} - \lambda = 0 \quad \forall t$$
 
 2. **Primal Feasibility**:
-$$ \sum_{t=1}^{12} x(t) \leq S $$
+$$\sum_{t=1}^{12} x(t) \leq S$$
 
 3. **Dual Feasibility**:
-$$ \lambda \geq 0 $$
+$$\lambda \geq 0$$
 
 4. **Complementary Slackness**:
-$$ \lambda \left( \sum_{t=1}^{12} x(t) - S \right) = 0 $$
+$$\lambda \left( \sum_{t=1}^{12} x(t) - S \right) = 0$$
 
 The shadow price $\lambda$ only reflects marginal utility of resources when the constraint binds ($\sum x(t) = S$). If resources are under-utilized ($\sum x(t) < S$), complementary slackness forces $\lambda=0$, collapsing the economic interpretation (Boyd & Vandenberghe, 2004; Rardin, 2017).
 
@@ -82,13 +82,13 @@ This isomorphism allows applying path integral methods from quantum field theory
 
 Partial derivatives of the optimal value function illustrate sensitivity:
 
-* **With respect to ****$b$****:**
+**With respect to ****$b$****:**
 
-$$ \frac{\partial Q^*}{\partial b} = \sum_{t=1}^{12} a x^*(t)^b \ln(x^*(t)) $$
+$$\frac{\partial Q^*}{\partial b} = \sum_{t=1}^{12} a x^*(t)^b \ln(x^*(t))$$
 
-* **With respect to ****$d(t)$****:**
+**With respect to ****$d(t)$****:**
 
-$$ \frac{\partial Q^*}{\partial d(t)} = -c x^*(t)^{d(t)} \ln(x^*(t)) $$
+$$\frac{\partial Q^*}{\partial d(t)} = -c x^*(t)^{d(t)} \ln(x^*(t))$$
 
 These follow from the envelope theorem (Saltelli et al., 2004), showing how global and time-specific parameters affect outcomes.
 
