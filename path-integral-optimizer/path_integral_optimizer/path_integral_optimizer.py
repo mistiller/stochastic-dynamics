@@ -57,13 +57,16 @@ class PathIntegralOptimizer:
             gp_ell_prior (Dict): Prior for GP lengthscale 'ell'. Ex: {"dist": "Gamma", "alpha": 5, "beta": 1} or {"dist": "Gamma", "mu": 5, "sigma": 5}
             gp_mean_prior (Dict): Prior for GP mean 'mean_d'. Ex: {"dist": "Normal", "mu": 2, "sigma": 0.5}
             total_resource (float): Fixed total resource.
-            T (int): Fixed number of time steps for the optimization/forecast horizon.
+            T (int): Fixed number of time steps for the optimization/forecast horizon. Must be >= 1.
             hbar (float): Fixed noise parameter.
             num_steps (int): Number of MCMC steps.
             burn_in (int): Number of burn-in steps.
             historical_t (Optional[np.ndarray]): Time steps of the historical input data.
             historical_input (Optional[np.ndarray]): Values of the historical input data.
         """
+        if T < 1:
+            raise ValueError("T (forecast horizon) must be at least 1.")
+
         # Validate priors using Pydantic models
         try:
             self.base_cost_prior_def = PriorDefinition(**base_cost_prior)
@@ -186,18 +189,27 @@ class PathIntegralOptimizer:
                 1, ls=pt.as_tensor_variable(ell + 1e-9)
             ) + pm.gp.cov.WhiteNoise(1e-6)
 
-            X = np.arange(1, self.T + 1)[:, None]
-            X = (X - np.mean(X)) / np.std(X)  # Standardize input for GP
+            # Prepare input for GP: time points for the forecast horizon
+            X_coords = np.arange(self.T)[:, None].astype(config.floatX)
+            if self.T > 1:
+                X_coords_std = np.std(X_coords)
+                if X_coords_std > 1e-9: # Avoid division by zero if all points are the same (e.g. T=1)
+                    X_coords = (X_coords - np.mean(X_coords)) / X_coords_std
+                else: # Handles T=1 or cases where all X_coords are identical
+                    X_coords = np.zeros_like(X_coords)
+            elif self.T == 1: # Explicitly handle T=1
+                 X_coords = np.array([[0.0]], dtype=config.floatX)
+
 
             gp_d = pm.gp.Latent(mean_func=pm.gp.mean.Constant(mean_d), cov_func=cov_d)
-            f_d = gp_d.prior("f_d", X=X)
+            f_d = gp_d.prior("f_d", X=X_coords)
             # Transform f_d to ensure d(t) > 1 (softplus(x) > 0)
             d_t = pm.Deterministic("d_t", pt.softplus(f_d) + 1 + 1e-6)
 
             # Dirichlet prior encourages the sum to be total_resource
             x_raw = pm.Dirichlet(
                 "x_raw", a=np.ones(self.T), dims="t"
-            )
+            ) # type: ignore
             x_path = pm.Deterministic("x_path", x_raw * self.total_resource, dims="t")
 
             action = self.compute_action(
@@ -219,6 +231,10 @@ class PathIntegralOptimizer:
             )
 
         logger.info("MCMC sampling finished. Processing trace...")
+
+        if self.trace is None: # Should not happen if pm.sample ran
+            logger.error("MCMC sampling did not produce a trace.")
+            return
 
         self.mcmc_paths = self.trace.posterior["x_path"].values.reshape(-1, self.T)
         c_samples = self.trace.posterior["base_cost"].values.flatten()
@@ -282,15 +298,18 @@ class PathIntegralOptimizer:
 
         plt.figure(figsize=(12, 7))
 
+        # Plot individual top paths
+        time_axis = np.arange(1, self.T + 1)
         for idx in top_indices:
             plt.plot(
-                range(1, self.T + 1), self.mcmc_paths[idx], color="blue", alpha=0.3
+                time_axis, self.mcmc_paths[idx], color="blue", alpha=0.3
             )
 
+        # Plot mean of top paths
         top_paths = self.mcmc_paths[top_indices]
         mean_top_path = np.mean(top_paths, axis=0)
         plt.plot(
-            range(1, self.T + 1),
+            time_axis,
             mean_top_path,
             label=f"Mean of Top {top_percent}% Paths",
             color="darkblue",
@@ -324,7 +343,8 @@ class PathIntegralOptimizer:
             return
 
         top_indices = self._get_top_paths_indices(top_percent)
-        top_actions = self.actions[top_indices]
+        top_actions = self.actions[top_indices] if len(top_indices) > 0 else np.array([])
+
 
         plt.figure(figsize=(12, 7))
 
@@ -366,7 +386,8 @@ class PathIntegralOptimizer:
         mean_path = idata.posterior.x_path.mean(dim=("chain", "draw")).values
         std_path = idata.posterior.x_path.std(dim=("chain", "draw")).values
 
-        finite_action_values = self.actions[np.isfinite(self.actions)]
+        finite_action_values = self.actions[np.isfinite(self.actions)] if self.actions is not None else np.array([])
+
 
         if len(finite_action_values) == 0:
             logger.warning("No finite action values found in the posterior samples.")
@@ -411,12 +432,12 @@ class PathIntegralOptimizer:
             return ParameterSummary(
                 mean=float(param_summary["mean"]),
                 sd=float(param_summary["sd"]),
-                hdi_3=(
+                hdi_3=( # Note: ArviZ 'hdi_3%' is the lower bound of the 94% HDI
                     float(param_summary["hdi_3%"]),
                     float(param_summary["hdi_97%"]),
                 ),
-                hdi_97=(
-                    float(param_summary["hdi_3%"]),
+                hdi_97=( # This field should ideally represent the 97th percentile of the HDI (upper bound)
+                    float(param_summary["hdi_3%"]), # Storing the full interval here for now
                     float(param_summary["hdi_97%"]),
                 ),
                 mcse_mean=float(param_summary["mcse_mean"]),
@@ -438,7 +459,7 @@ class PathIntegralOptimizer:
             total_resource=self.total_resource,
             T=self.T,
             hbar=self.hbar,
-            num_samples=len(self.actions),  # Total samples attempted
+            num_samples=len(self.actions) if self.actions is not None else 0,
             num_finite_actions=len(finite_action_values),
             base_cost_summary=base_cost_summary,
             base_benefit_summary=base_benefit_summary,
@@ -462,55 +483,59 @@ class PathIntegralOptimizer:
         Optional[np.ndarray],
         Optional[np.ndarray],
     ]:
-        """Helper to calculate historical and forecasted cost/benefit."""
-        if (
-            self.historical_input is None
-            or self.historical_t is None
-            or self.trace is None
-            or self.mcmc_paths is None
-            or self.T is None
-            or self.T <= 0
-        ):
-            raise ValueError(
-                "Missing data for historical/forecasted metric calculation."
+        """
+        Helper to calculate historical and forecasted cost/benefit using posterior mean parameters.
+        Historical d(t) is approximated by the posterior mean of the GP's constant mean function ('mean_d').
+        Forecasted d(t) uses the posterior mean of the time-varying d(t) from the GP.
+        """
+        if self.trace is None:
+            logger.warning(
+                "MCMC trace not available. Cannot calculate metrics."
             )
+            return None, None, None, None
 
+        # Posterior mean of global parameters
         base_cost_mean = self.trace.posterior["base_cost"].values.mean()
         base_benefit_mean = self.trace.posterior["base_benefit"].values.mean()
         scale_benefit_mean = self.trace.posterior["scale_benefit"].values.mean()
-        d_t_mean = self.trace.posterior["d_t"].mean(dim=("chain", "draw")).values
 
+        # Posterior mean of d(t) for the forecast period (length T)
+        d_t_forecast_mean = self.trace.posterior["d_t"].mean(dim=("chain", "draw")).values
+        
+        # Posterior mean of the GP's constant mean function (proxy for historical d(t))
+        d_t_historical_proxy = self.trace.posterior["mean_d"].values.mean()
+
+        # Mean forecasted path (length T)
+        if self.mcmc_paths is None:
+             logger.warning("MCMC paths not available for forecast calculation.")
+             return None, None, None, None
         mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
 
-        # Calculate historical cost and benefit
-        hist_len = len(self.historical_input)
-        if hist_len > len(d_t_mean):
-            logger.warning(
-                "Historical input length exceeds d_t length. Cannot calculate historical cost/benefit accurately."
-            )
-            historical_cost = np.full_like(self.historical_input, np.nan)
-            historical_benefit = np.full_like(self.historical_input, np.nan)
-        else:
-            historical_d_t = d_t_mean[:hist_len]
-            historical_cost = base_cost_mean * self.historical_input**historical_d_t
-            historical_benefit = (
-                base_benefit_mean * self.historical_input**scale_benefit_mean
-            )
 
-        # Calculate forecasted cost and benefit
-        forecast_len = len(mean_forecast_path)
-        if len(d_t_mean) < hist_len + forecast_len:
-            logger.warning(
-                "d_t length is less than historical + forecast length. Cannot calculate forecasted cost/benefit accurately."
-            )
+        historical_cost: Optional[np.ndarray] = None
+        historical_benefit: Optional[np.ndarray] = None
+        
+        if self.historical_input is not None:
+            try:
+                historical_cost = base_cost_mean * (self.historical_input ** d_t_historical_proxy)
+                historical_benefit = base_benefit_mean * (self.historical_input ** scale_benefit_mean)
+            except Exception as e:
+                logger.error(f"Error calculating historical metrics: {e}")
+                historical_cost = np.full_like(self.historical_input, np.nan) if self.historical_input is not None else None
+                historical_benefit = np.full_like(self.historical_input, np.nan) if self.historical_input is not None else None
+        else:
+            logger.info("No historical input data provided, skipping historical metrics calculation.")
+
+
+        forecast_cost: Optional[np.ndarray] = None
+        forecast_benefit: Optional[np.ndarray] = None
+        try:
+            forecast_cost = base_cost_mean * (mean_forecast_path ** d_t_forecast_mean)
+            forecast_benefit = base_benefit_mean * (mean_forecast_path ** scale_benefit_mean)
+        except Exception as e:
+            logger.error(f"Error calculating forecast metrics: {e}")
             forecast_cost = np.full_like(mean_forecast_path, np.nan)
             forecast_benefit = np.full_like(mean_forecast_path, np.nan)
-        else:
-            forecast_d_t = d_t_mean[hist_len : hist_len + forecast_len]
-            forecast_cost = base_cost_mean * mean_forecast_path**forecast_d_t
-            forecast_benefit = (
-                base_benefit_mean * mean_forecast_path**scale_benefit_mean
-            )
 
         return historical_cost, historical_benefit, forecast_cost, forecast_benefit
 
@@ -522,47 +547,63 @@ class PathIntegralOptimizer:
             output_file (Optional[str]): If provided, saves the plot to this file.
                                          Otherwise, shows the plot.
         """
-        if self.historical_input is None or self.historical_t is None:
-            logger.warning("Historical data not available. Cannot plot forecast.")
-            return
-        if self.mcmc_paths is None:
+        if self.mcmc_paths is None: # Depends on run_mcmc()
             logger.warning(
                 "MCMC paths not available. Run run_mcmc() first. Cannot plot forecast."
             )
             return
-        if self.T is None or self.T <= 0:
+        if self.T is None or self.T <= 0: # Should be caught by __init__
             logger.warning("No forecast period defined (T <= 0). Cannot plot forecast.")
             return
-        if self.trace is None:
+        if self.trace is None: # Depends on run_mcmc()
             logger.warning(
                 "No MCMC trace available. Cannot calculate historical/forecasted cost/benefit."
             )
-            plot_cost_benefit = False
-        else:
-            plot_cost_benefit = True
+            return
 
-        fig, axes = plt.subplots(3, 1, figsize=(14, 18))
+
+        fig, axes = plt.subplots(3, 1, figsize=(14, 18), sharex=True)
         ax1, ax2, ax3 = axes
 
         # Calculate time axis for forecast
-        last_historical_time = self.historical_t[-1]
-        time_step = 1
-        if len(self.historical_t) > 1:
-            time_step = self.historical_t[1] - self.historical_t[0]
-        forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
+        forecast_time_axis = np.arange(1, self.T + 1)
+        historical_time_axis = None
+
+        if self.historical_t is not None:
+            historical_time_axis = self.historical_t
+            last_historical_time = self.historical_t[-1]
+            # Assuming historical_t are indices or regularly spaced
+            time_step = 1
+            if len(self.historical_t) > 1:
+                # Attempt to infer time step, default to 1 if irregular
+                diffs = np.diff(self.historical_t)
+                if len(diffs) > 0 and np.allclose(diffs, diffs[0]):
+                    time_step = diffs[0]
+            
+            forecast_time_axis = last_historical_time + np.arange(1, self.T + 1) * time_step
+            
+            # Plot historical input data
+            ax1.plot(
+                historical_time_axis,
+                self.historical_input,
+                label="Historical Input",
+                color="blue",
+                marker="o",
+                linestyle="-",
+            )
+            ax1.axvline(
+                x=last_historical_time,
+                color="gray",
+                linestyle=":",
+                linewidth=2,
+                label="Forecast Horizon Start",
+            )
+        else: # No historical data, plot forecast starting from t=1
+            forecast_time_axis = np.arange(1, self.T + 1)
+
 
         # Get mean forecast path
         mean_forecast_path = np.mean(self.mcmc_paths, axis=0)
-
-        # Plot input data
-        ax1.plot(
-            self.historical_t,
-            self.historical_input,
-            label="Historical Input",
-            color="blue",
-            marker="o",
-            linestyle="-",
-        )
         ax1.plot(
             forecast_time_axis,
             mean_forecast_path,
@@ -571,103 +612,85 @@ class PathIntegralOptimizer:
             marker="x",
             linestyle="--",
         )
-        ax1.axvline(
-            x=last_historical_time,
-            color="gray",
-            linestyle=":",
-            linewidth=2,
-            label="Forecast Horizon Start",
-        )
-        ax1.set_xlabel("Time (t)")
         ax1.set_ylabel("Allocation (x(t))")
         ax1.set_title("Historical Input and Mean Forecasted Allocation")
         ax1.legend()
         ax1.grid(True)
 
-        if plot_cost_benefit:
-            historical_cost, historical_benefit, forecast_cost, forecast_benefit = (
-                self._calculate_historical_forecasted_metrics()
+        # Calculate and plot cost/benefit
+        historical_cost, historical_benefit, forecast_cost, forecast_benefit = (
+            self._calculate_historical_forecasted_metrics()
+        )
+
+        # Plot historical cost/benefit if available
+        if historical_cost is not None and historical_time_axis is not None:
+            ax2.plot(
+                historical_time_axis,
+                historical_cost,
+                label="Historical Cost (Estimated)",
+                color="green",
+                marker="o",
+                linestyle="-",
+            )
+        if historical_benefit is not None and historical_time_axis is not None:
+            ax3.plot(
+                historical_time_axis,
+                historical_benefit,
+                label="Historical Benefit (Estimated)",
+                color="orange",
+                marker="o",
+                linestyle="-",
+            )
+        
+        # Plot forecasted cost/benefit if available
+        if forecast_cost is not None:
+            ax2.plot(
+                forecast_time_axis,
+                forecast_cost,
+                label="Forecasted Cost (Mean)",
+                color="darkgreen",
+                marker="x",
+                linestyle="--",
+            )
+        if forecast_benefit is not None:
+            ax3.plot(
+                forecast_time_axis,
+                forecast_benefit,
+                label="Forecasted Benefit (Mean)",
+                color="darkorange",
+                marker="x",
+                linestyle="--",
             )
 
-            if (
-                historical_cost is not None
-                and historical_benefit is not None
-                and forecast_cost is not None
-                and forecast_benefit is not None
-            ):
-                # Plot historical cost
-                ax2.plot(
-                    self.historical_t,
-                    historical_cost,
-                    label="Historical Cost (Estimated)",
-                    color="green",
-                    marker="o",
-                    linestyle="-",
+        # Vertical line for forecast start on cost/benefit plots if historical data exists
+        if self.historical_t is not None:
+            last_historical_time = self.historical_t[-1]
+            for ax_cb in [ax2, ax3]:
+                ax_cb.axvline(
+                    x=last_historical_time,
+                    color="gray",
+                    linestyle=":",
+                    linewidth=2,
+                    # label="Forecast Horizon Start" # Already labeled in ax1
                 )
-
-                # Plot forecasted cost
-                ax2.plot(
-                    forecast_time_axis,
-                    forecast_cost,
-                    label="Forecasted Cost (Mean)",
-                    color="darkgreen",
-                    marker="x",
-                    linestyle="--",
-                )
-
-                # Plot historical benefit
-                ax3.plot(
-                    self.historical_t,
-                    historical_benefit,
-                    label="Historical Benefit (Estimated)",
-                    color="orange",
-                    marker="o",
-                    linestyle="-",
-                )
-
-                # Plot forecasted benefit
-                ax3.plot(
-                    forecast_time_axis,
-                    forecast_benefit,
-                    label="Forecasted Benefit (Mean)",
-                    color="darkorange",
-                    marker="x",
-                    linestyle="--",
-                )
-            else:
-                logger.warning("Skipping cost/benefit plots due to calculation errors.")
-
-        ax2.axvline(
-            x=last_historical_time,
-            color="gray",
-            linestyle=":",
-            linewidth=2,
-            label="Forecast Horizon Start",
-        )
-        ax2.set_xlabel("Time (t)")
+        
         ax2.set_ylabel("Cost Value")
         ax2.set_title("Historical and Forecasted Cost")
         ax2.legend()
         ax2.grid(True)
 
-        ax3.axvline(
-            x=last_historical_time,
-            color="gray",
-            linestyle=":",
-            linewidth=2,
-            label="Forecast Horizon Start",
-        )
-        ax3.set_xlabel("Time (t)")
+        ax3.set_xlabel("Time (t)") # X-axis label only on the bottom plot due to sharex
         ax3.set_ylabel("Benefit Value")
         ax3.set_title("Historical and Forecasted Benefit")
         ax3.legend()
         ax3.grid(True)
 
         # Add overall title and adjust layout
-        plt.suptitle(
-            "Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.95
-        )
-        plt.tight_layout()
+        fig.suptitle(
+            "Historical Data and Forecasts for Input, Cost, and Benefit Metrics", y=0.98
+        ) # Adjusted y for suptitle
+        plt.tight_layout(rect=[0, 0, 1, 0.96]) # Adjust rect to make space for suptitle
+
 
         if output_file:
             plt.savefig(output_file)
@@ -678,16 +701,16 @@ class PathIntegralOptimizer:
 
     @staticmethod
     def from_data(
-        input: np.array,
-        cost: np.array,
-        benefit: np.array,
+        input: np.ndarray, # Changed from np.array to np.ndarray for consistency
+        cost: np.ndarray,
+        benefit: np.ndarray,
         total_resource: float,
         hbar: float,
         num_steps: int,
         burn_in: int,
         forecast_steps: int,
-        t: Optional[np.array] = None,
-    ):
+        t: Optional[np.ndarray] = None,
+    ): # type: ignore
         """
         Creates a PathIntegralOptimizer instance by first estimating parameters
         from historical data and using the estimates to define priors.
@@ -701,9 +724,11 @@ class PathIntegralOptimizer:
 
         logger.info("Estimating parameters from input data to define priors...")
 
+        # TODO: Consider if ParameterEstimator should return more detailed d(t) info
+        # for more accurate historical plotting if desired.
         parameters: ParameterEstimationResult = ParameterEstimator(
             data
-        ).get_parameters()
+        ).get_parameters() # Default MCMC parameters used here
 
         base_cost_prior_dict = {
             "dist": "TruncatedNormal",
