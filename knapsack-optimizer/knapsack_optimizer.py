@@ -319,9 +319,16 @@ class KnapsackOptimizer:
             
             for _ in range(runs_per_size):
                 # Generate random knapsack instance
-                values = np.random.randint(1, 100, size=n_items)
-                weights = np.random.randint(1, 50, size=n_items)
-                capacity = np.sum(weights) // 2  # Set capacity to half total weight
+                # Generate feasible problem instances
+                while True:
+                    values = np.random.randint(1, 100, size=n_items)
+                    weights = np.random.randint(1, 50, size=n_items)
+                    min_weight = np.min(weights)
+                    capacity = max(np.sum(weights) // 2, min_weight)
+                    
+                    # Ensure at least one item fits
+                    if np.any(weights <= capacity):
+                        break
                 
                 # Create new optimizer
                 ko = KnapsackOptimizer(values.tolist(), weights.tolist(), capacity, hbar=0.5)
@@ -361,11 +368,11 @@ class KnapsackOptimizer:
                 'optimizer': 'Path Integral',
                 'items': n_items,
                 'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
-                'avg_value': np.mean(valid_values) if valid_values else np.nan,
-                'avg_greedy_value': np.mean(greedy_values) if greedy_values else np.nan,
-                'avg_dp_value': np.mean(dp_values) if dp_values else np.nan,
-                'avg_time': np.mean(run_times) if run_times else None,
-                'max_time': np.max(run_times) if run_times else None,
+                'avg_value': np.nanmean(valid_values) if valid_values else np.nan,
+                'avg_greedy_value': np.nanmean(greedy_values) if greedy_values else np.nan,
+                'avg_dp_value': np.nanmean(dp_values) if dp_values else np.nan,
+                'avg_time': np.mean(run_times) if run_times else np.nan,
+                'max_time': np.max(run_times) if run_times else np.nan,
                 'errors': error_count,
                 'runs': runs_per_size,
                 'valid_solutions': len(valid_values)
