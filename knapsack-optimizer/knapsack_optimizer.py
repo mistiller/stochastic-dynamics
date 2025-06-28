@@ -407,10 +407,6 @@ class KnapsackOptimizer:
         
             # Stop early if we're taking too long
             if results[n_items]['avg_time'] and results[n_items]['avg_time'] > 60:
-            }
-            
-            # Stop if we're taking too long
-            if results[n_items]['avg_time'] and results[n_items]['avg_time'] > 60:
                 logger.info(f"Stopping early at {n_items} items due to long runtime")
                 break
                 
