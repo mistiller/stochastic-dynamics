@@ -40,7 +40,7 @@ PathIntegralOptimizer(
     base_cost_prior: Dict[str, Any],   # Prior for base_cost ~ p(base_cost)
     base_benefit_prior: Dict[str, Any],# Prior for base_benefit ~ p(base_benefit) 
     scale_benefit_prior: Dict[str, Any], # Prior for benefit scaling exponent
-    gp_eta_prior: Dict[str, Any],      # GP magnitude prior η ~ HalfNormal(σ=1)
+    gp_eta_prior: Dict[str, Any],      # GP amplitude prior η ~ HalfNormal(σ=1)
     gp_ell_prior: Dict[str, Any],      # GP length scale prior ℓ ~ Gamma(α=2, β=1)
     gp_mean_prior: Dict[str, Any],     # GP mean function μ ~ Normal(μ=1, σ=0.5)
     total_resource: float,             # Total resource constraint Σx(t) ≤ S
@@ -126,6 +126,29 @@ This enables efficient exploration of:
 - Discontinuous solution spaces
 - Multiple local minima
 - Temporally correlated parameter uncertainties
+
+## Knapsack Problem Solver
+
+The `KnapsackOptimizer` class in `knapsack_solver/knapsack_optimizer.py` implements a Bayesian approach to the 0-1 knapsack problem using Hamiltonian Monte Carlo with constraint embedding. The script includes the `KnapsackOptimizer` class with methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
+
+### Key Features:
+- **Quantum-inspired Knapsack Solver**: Uses a Bayesian approach to the 0-1 knapsack problem with Hamiltonian Monte Carlo and constraint embedding.
+- **Action Potential**: Combines the objective and constraint into a single action potential, allowing for efficient exploration of the solution space.
+- **MCMC Sampling**: Uses NUTS for continuous relaxation and Gibbs for discrete variables to find the optimal solution.
+- **Visualization**: Provides plots of the total value and weight distributions, as well as the best solution found.
+
+### Example Usage:
+```python
+# Example usage
+values = [505, 352, 458, 220, 354, 414, 498, 545, 473, 543]
+weights = [23, 26, 20, 18, 32, 27, 29, 26, 30, 27]
+capacity = 67
+
+solver = KnapsackOptimizer(values, weights, capacity, hbar=0.5)
+solution = solver.solve()
+solver.summary()
+solver.plot_results()
+```
 
 ## References
 
