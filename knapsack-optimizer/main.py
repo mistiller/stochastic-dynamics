@@ -2,8 +2,8 @@ from typing import Final
 from datetime import datetime, timezone
 from knapsack_optimizer import KnapsackOptimizer
 
-MAX_ITEMS:Final[int]=20
-RUNS_PER_SIZE:Final[int]=10
+MAX_ITEMS:Final[int]=10
+RUNS_PER_SIZE:Final[int]=3
 
 if __name__ == "__main__":
     # Run scaling comparison simulation

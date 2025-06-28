@@ -40,7 +40,7 @@ def run_scaling_benchmark(max_items: int = 50, runs_per_size: int = 10) -> pd.Da
     
     return pd.DataFrame(results)
 
-def save_benchmark_results(df: pd.DataFrame, filename: str = "benchmark_results.csv"):
+def save_benchmark_results(df: pd.DataFrame, filename: str = "results/benchmark_results.csv"):
     """Save benchmark results to CSV with timestamp."""
     df['timestamp'] = pd.Timestamp.now()
     df.to_csv(filename, index=False)
