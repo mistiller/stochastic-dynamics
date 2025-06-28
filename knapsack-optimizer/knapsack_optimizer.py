@@ -6,6 +6,7 @@ Implements a Bayesian approach to the 0-1 knapsack problem using PyMC
 import math
 import time
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pymc.smc as smc
 import arviz as az
@@ -321,10 +322,15 @@ class KnapsackOptimizer:
                     logger.warning(f"Failed for {n_items} items: {str(e)}")
                     continue
                     
+            error_count = runs_per_size - len(run_times)
             results[n_items] = {
-                'agreement_rate': agreements / runs_per_size,
+                'optimizer': 'Path Integral',
+                'items': n_items,
+                'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
                 'avg_time': np.mean(run_times) if run_times else None,
-                'max_time': np.max(run_times) if run_times else None
+                'max_time': np.max(run_times) if run_times else None,
+                'errors': error_count,
+                'runs': runs_per_size
             }
             
             # Stop if we're taking too long
@@ -332,7 +338,10 @@ class KnapsackOptimizer:
                 logger.info(f"Stopping early at {n_items} items due to long runtime")
                 break
                 
-        return results
+        # Convert results to DataFrame
+        df = pd.DataFrame(results.values()).sort_values('items')
+        df = df[['optimizer', 'items', 'agreement_rate', 'avg_time', 'max_time', 'errors', 'runs']]
+        return df
 
     def plot_results(self):
         """Visualize sampling results"""
