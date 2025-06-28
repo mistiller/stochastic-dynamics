@@ -314,6 +314,8 @@ class KnapsackOptimizer:
             agreements = 0
             run_times = []
             valid_values = []
+            greedy_values = []
+            dp_values = []
             
             for _ in range(runs_per_size):
                 # Generate random knapsack instance
@@ -336,8 +338,13 @@ class KnapsackOptimizer:
                     if len(valid_vals) > 0:
                         valid_values.extend(valid_vals)
                     
+                    # Get baseline solutions
                     _, greedy_value, _ = ko.greedy_solver()
                     _, dp_value, _ = ko.dynamic_programming_solver()
+                    
+                    # Store baseline values
+                    greedy_values.append(greedy_value)
+                    dp_values.append(dp_value)
                     
                     # Check if all solvers agree
                     if np.isclose(pi_value, greedy_value) and np.isclose(pi_value, dp_value):
@@ -355,6 +362,8 @@ class KnapsackOptimizer:
                 'items': n_items,
                 'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
                 'avg_value': np.mean(valid_values) if valid_values else np.nan,
+                'avg_greedy_value': np.mean(greedy_values) if greedy_values else np.nan,
+                'avg_dp_value': np.mean(dp_values) if dp_values else np.nan,
                 'avg_time': np.mean(run_times) if run_times else None,
                 'max_time': np.max(run_times) if run_times else None,
                 'errors': error_count,
@@ -369,7 +378,11 @@ class KnapsackOptimizer:
                 
         # Convert results to DataFrame
         df = pd.DataFrame(results.values()).sort_values('items')
-        df = df[['optimizer', 'items', 'agreement_rate', 'avg_value', 'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions']]
+        df = df[[
+            'optimizer', 'items', 'agreement_rate',
+            'avg_value', 'avg_greedy_value', 'avg_dp_value',
+            'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions'
+        ]]
         return df
 
     def plot_results(self):
