@@ -59,15 +59,15 @@ class TestPathIntegralOptimizer:
         
         # Test creation from data
         pio = PathIntegralOptimizer.from_data(
-            input=data["input"],
-            cost=data["cost"],
-            benefit=data["benefit"],
-            total_resource=data["total_resource"],
+            input=data.input,
+            cost=data.cost,
+            benefit=data.benefit,
+            total_resource=data.total_resource,
             hbar=sample_config["hbar"],
             num_steps=sample_config["num_steps"],
             burn_in=sample_config["burn_in"],
             forecast_steps=sample_config["T"],
-            t=data.get("t")  # Use the time points from the synthetic data
+            t=data.t  # Use the time points from the synthetic data
         )
         
         assert pio is not None
