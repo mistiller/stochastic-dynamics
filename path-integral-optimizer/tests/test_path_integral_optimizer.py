@@ -124,12 +124,16 @@ class TestPathIntegralOptimizer:
     
     def test_forecast_without_mcmc(self, sample_config):
         """Test that plotting forecast without running MCMC fails gracefully"""
-        optimizer = PathIntegralOptimizer(**sample_config)
+        # Create config without historical data to force the error
+        config = sample_config.copy()
+        config["historical_input"] = None
+        config["historical_t"] = None
+        optimizer = PathIntegralOptimizer(**config)
         
         with pytest.raises(ValueError) as exc_info:
             optimizer.plot_forecast()
         
-        assert "Run run_mcmc() first to generate samples" in str(exc_info.value)
+        assert "No MCMC samples available" in str(exc_info.value)
     
     def test_invalid_action_computation(self, sample_config):
         """Test handling of invalid action computation"""
