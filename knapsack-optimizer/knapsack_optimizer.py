@@ -317,6 +317,7 @@ class KnapsackOptimizer:
             valid_values = []
             greedy_values = []
             dp_values = []
+            percent_diff_values = []
             
             for _ in range(runs_per_size):
                 # Generate random knapsack instance
@@ -373,9 +374,6 @@ class KnapsackOptimizer:
                 
                 # Check agreement only if PI succeeded
                 if pi_success:
-                    # Initialize percent_diff_values at the start of each run
-                    percent_diff_values = []
-                    
                     # Calculate percentage difference from baselines
                     avg_baseline = (greedy_value + dp_value) / 2
                     percent_diff = (pi_value - avg_baseline) / avg_baseline * 100
