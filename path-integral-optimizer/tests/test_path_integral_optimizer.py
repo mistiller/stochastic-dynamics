@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import arviz as az
 from path_integral_optimizer.path_integral_optimizer import PathIntegralOptimizer
 from path_integral_optimizer.path_integral_optimizer_result import PathIntegralOptimizerResult
 from path_integral_optimizer.dataset.synthetic_dataset import SyntheticDataset
