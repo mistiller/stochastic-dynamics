@@ -1,6 +1,6 @@
 # Path Integral Optimizer for Bayesian MCMC Sampling
 
-A Python implementation of path integral optimization combining Bayesian inference with quantum-inspired path integral methods for stochastic optimization problems.
+A Python implementation of path integral optimization combining Bayesian inference with quantum-inspired path integral methods for stochastic optimization problems, including both continuous resource allocation and discrete combinatorial problems like the 0-1 knapsack problem.
 
 ## Installation & Requirements
 
@@ -132,10 +132,12 @@ This enables efficient exploration of:
 The `KnapsackOptimizer` class in `knapsack_solver/knapsack_optimizer.py` implements a Bayesian approach to the 0-1 knapsack problem using Hamiltonian Monte Carlo with constraint embedding. The script includes the `KnapsackOptimizer` class with methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
 
 ### Key Features:
-- **Quantum-inspired Knapsack Solver**: Uses a Bayesian approach to the 0-1 knapsack problem with Hamiltonian Monte Carlo and constraint embedding.
-- **Action Potential**: Combines the objective and constraint into a single action potential, allowing for efficient exploration of the solution space.
-- **MCMC Sampling**: Uses NUTS for continuous relaxation and Gibbs for discrete variables to find the optimal solution.
-- **Visualization**: Provides plots of the total value and weight distributions, as well as the best solution found.
+- **Quantum-inspired Knapsack Solver**: Uses path integral formalism to encode the 0-1 knapsack problem with Bayesian inference and Hamiltonian Monte Carlo.
+- **Action Functional**: Combines the objective (total value) and constraint (capacity) into a single action potential with smooth penalty formulation.
+- **Constraint Handling**: Implements quantum-inspired constraint embedding through a continuous relaxation of the discrete problem.
+- **MCMC Sampling**: Uses Sequential Monte Carlo (SMC) sampling to explore the path space of possible solutions.
+- **Solution Extraction**: Identifies optimal solutions through posterior analysis of inclusion variables.
+- **Visualization**: Provides diagnostic plots for value and weight distributions.
 
 ### Example Usage:
 ```python
@@ -148,6 +150,36 @@ solver = KnapsackOptimizer(values, weights, capacity, hbar=0.5)
 solution = solver.solve()
 solver.summary()
 solver.plot_results()
+```
+
+### Path Integral Formulation for Knapsack:
+The quantum-inspired path integral approach to discrete optimization problems like knapsack:
+
+1. **Encoding Discrete Choices**: Uses continuous relaxation of Bernoulli variables through quantum state superposition
+2. **Action Functional**: Formulates the knapsack problem as a path integral over possible solutions:
+   
+```math
+S[x] = \frac{1}{\hbar} \left( \sum_{i=1}^N v_i x_i + \hbar \cdot \text{constraint}(x) \right)
+```
+
+3. **Constraint Handling**: Implements smooth constraint violation penalty through:
+```python
+constraint = pm.math.switch(total_weight > capacity,
+                          -(total_weight - capacity)**2,
+                          0)
+```
+
+4. **Quantum Exploration**: Uses path integral formalism to explore solution space with quantum-inspired fluctuations:
+```python
+pm.Potential('action', 
+            (total_value + hbar * constraint) / hbar)
+```
+
+5. **Solution Extraction**: Finds optimal solutions through posterior analysis of the quantum state space:
+```python
+posterior = az.extract(trace, 'inclusion')
+best_idx = np.argmax(posterior.sum('sample').values)
+best_solution = posterior.sel(chain=best_idx).values.astype(bool)
 ```
 
 ## References
