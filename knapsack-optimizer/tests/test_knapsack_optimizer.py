@@ -52,7 +52,7 @@ class TestKnapsackOptimizer:
 
     def test_solve(self, optimizer):
         """Test MCMC-based solve returns valid solution"""
-        solution = optimizer.solve(draws=500, tune=250, chains=2)
+        solution = optimizer.solve(draws=1000, tune=500, chains=2)
         assert isinstance(solution, np.ndarray)
         assert solution.dtype == bool
         assert len(solution) == len(DUMMY_VALUES)
@@ -66,7 +66,7 @@ class TestKnapsackOptimizer:
 
     def test_summary(self, optimizer, capsys):
         """Test summary method output contains expected keys"""
-        optimizer.solve(draws=500, tune=250, chains=2)
+        optimizer.solve(draws=1000, tune=500, chains=2)
         optimizer.summary(include_baseline=True)
         captured = capsys.readouterr().out
 
@@ -78,7 +78,7 @@ class TestKnapsackOptimizer:
 
     def test_plot_results(self, optimizer):
         """Test plot_results runs without error"""
-        optimizer.solve(draws=500, tune=250, chains=2)
+        optimizer.solve(draws=1000, tune=500, chains=2)
         try:
             optimizer.plot_results()
         except Exception as e:
