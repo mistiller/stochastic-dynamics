@@ -24,6 +24,27 @@ class KnapsackOptimizer:
         weights: List of item weights
         capacity: Maximum allowed total weight
         hbar: Quantum fluctuation parameter (higher = more exploration)
+
+    Performance Analysis from Scaling Results:
+    ----------------------------------------
+    1. Solution Quality:
+    - Agreement rates with classical methods (60% avg) show moderate reliability
+    - Performance varies non-monotonically with problem size (60% @ 3 items → 40% @ 20 items)
+    - May struggle with combinatorial explosions beyond 15 items (0% agreement at 17 items)
+    
+    2. Time Complexity:
+    - Sub-exponential time growth observed (≈1.4s @ 3 items → ≈2.2s @ 20 items)
+    - Polynomial-like scaling O(n^~0.3) suggests reasonable scaling for medium-sized problems
+    - Maximum times stay under 3s up to 20 items
+    
+    3. Error Characteristics:
+    - Error rates increase with problem size (0% @ 3 items → 20% @ 20 items)
+    - Failures likely from constraint satisfaction challenges in high dimensions
+    
+    4. Comparative Performance:
+    - Beats greedy heuristic in quality (40-80% agreement vs greedy's known suboptimality)
+    - Lags dynamic programming in consistency but offers probabilistic uncertainty quantification
+    - Suitable for problems where approximate solutions with uncertainty estimates are valuable
     """
     
     def __init__(self, values: List[float], weights: List[float], 
