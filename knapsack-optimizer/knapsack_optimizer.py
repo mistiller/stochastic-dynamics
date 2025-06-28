@@ -74,8 +74,14 @@ class KnapsackOptimizer:
         
         with model:
             # Use Sequential Monte Carlo for discrete variables
-            self.trace = pm.sample(draws=draws, tune=tune, chains=chains,
-                                 target_accept=0.95, step=smc.SMC())
+            self.trace = smc.sample_smc(
+                draws=draws, 
+                tune=tune, 
+                chains=chains,
+                model=model,
+                kernel=smc.kernels.IMH,
+                compute_convergence_checks=False
+            )
             
         # Extract best solution
         posterior = az.extract(self.trace, 'inclusion')
