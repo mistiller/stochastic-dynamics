@@ -126,10 +126,10 @@ class TestPathIntegralOptimizer:
         """Test that plotting forecast without running MCMC fails gracefully"""
         optimizer = PathIntegralOptimizer(**sample_config)
         
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             optimizer.plot_forecast()
         
-        assert "Run run_mcmc() first" in str(exc_info.value)
+        assert "Run run_mcmc() first to generate samples" in str(exc_info.value)
     
     def test_invalid_action_computation(self, sample_config):
         """Test handling of invalid action computation"""
