@@ -94,6 +94,7 @@ class KnapsackOptimizer:
         
         # Find valid solutions
         valid_mask = all_weights <= self.capacity
+        self.valid_mask = valid_mask  # Store as instance variable for diagnostics
         valid_values = np.where(valid_mask, all_values, -np.inf)
         
         if np.any(valid_mask):
@@ -238,7 +239,7 @@ class KnapsackOptimizer:
         print("MCMC Diagnostics:")
         print(f"Maximum Energy: {self.trace['action'].max():.2f}")
         print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
-        print(f"Number of Valid Solutions: {np.sum(valid_mask)}")
+        print(f"Number of Valid Solutions: {np.sum(self.valid_mask)}")
         
         if include_baseline:
             # Run greedy baseline
