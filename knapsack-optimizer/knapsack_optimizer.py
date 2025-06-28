@@ -330,38 +330,47 @@ class KnapsackOptimizer:
                     if np.any(weights <= capacity):
                         break
                 
-                # Create new optimizer
-                ko = KnapsackOptimizer(values.tolist(), weights.tolist(), capacity, hbar=0.5)
+                # Create new optimizer with higher penalty factor
+                ko = KnapsackOptimizer(values.tolist(), weights.tolist(), capacity, 
+                                     hbar=0.5, penalty_factor=1e5)
+                
+                # Track if PI solver succeeded
+                pi_success = False
+                pi_value = np.nan
                 
                 try:
-                    # Get all solver results
+                    # Get path integral solution
                     start_time = time.time()
                     pi_sol = ko.solve(draws=1000, tune=500)
                     pi_value = values[pi_sol].sum()
                     pi_time = time.time() - start_time
-                    
-                    # Collect all valid solution values
-                    valid_vals = values[ko.valid_mask]
-                    if len(valid_vals) > 0:
-                        valid_values.extend(valid_vals)
-                    
-                    # Get baseline solutions
-                    _, greedy_value, _ = ko.greedy_solver()
-                    _, dp_value, _ = ko.dynamic_programming_solver()
-                    
-                    # Store baseline values
-                    greedy_values.append(greedy_value)
-                    dp_values.append(dp_value)
-                    
-                    # Check if all solvers agree
-                    if np.isclose(pi_value, greedy_value) and np.isclose(pi_value, dp_value):
-                        agreements += 1
-                        
                     run_times.append(pi_time)
+                    pi_success = True
+                    
+                    # Collect valid solution values
+                    valid_vals = values[ko.valid_mask]
+                    valid_values.extend(valid_vals if len(valid_vals) > 0 else [0])
                     
                 except Exception as e:
-                    logger.warning(f"Failed for {n_items} items: {str(e)}")
-                    continue
+                    logger.warning(f"Path Integral failed for {n_items} items: {str(e)}")
+                
+                # Always get baseline solutions even if PI failed
+                try:
+                    _, greedy_value, _ = ko.greedy_solver()
+                    greedy_values.append(greedy_value)
+                except:
+                    greedy_values.append(np.nan)
+                    
+                try:
+                    _, dp_value, _ = ko.dynamic_programming_solver()
+                    dp_values.append(dp_value)
+                except:
+                    dp_values.append(np.nan)
+                
+                # Check agreement only if PI succeeded
+                if pi_success:
+                    if np.isclose(pi_value, greedy_value) and np.isclose(pi_value, dp_value):
+                        agreements += 1
                     
             error_count = runs_per_size - len(run_times)
             results[n_items] = {
