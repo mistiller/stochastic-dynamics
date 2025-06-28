@@ -373,9 +373,17 @@ class KnapsackOptimizer:
                 
                 # Check agreement only if PI succeeded
                 if pi_success:
+                    # Calculate percentage difference from baselines
+                    avg_baseline = (greedy_value + dp_value) / 2
+                    percent_diff = (pi_value - avg_baseline) / avg_baseline * 100
+                    percent_diff_values.append(percent_diff)
+                
+                    # Check agreement with both baselines
                     if np.isclose(pi_value, greedy_value) and np.isclose(pi_value, dp_value):
                         agreements += 1
                     
+                else:
+                    percent_diff_values.append(np.nan)
             error_count = runs_per_size - len(run_times)
             results[n_items] = {
                 'optimizer': 'Path Integral',
@@ -388,7 +396,8 @@ class KnapsackOptimizer:
                 'max_time': np.max(run_times) if run_times else np.nan,
                 'errors': error_count,
                 'runs': runs_per_size,
-                'valid_solutions': len(valid_values)
+                'valid_solutions': len(valid_values),
+                'avg_percent_diff': np.nanmean(percent_diff_values) if percent_diff_values else np.nan
             }
             
             # Stop if we're taking too long
@@ -401,7 +410,7 @@ class KnapsackOptimizer:
         df = df[[
             'optimizer', 'items', 'agreement_rate',
             'avg_value', 'avg_greedy_value', 'avg_dp_value',
-            'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions'
+            'avg_percent_diff', 'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions'
         ]]
         return df
 

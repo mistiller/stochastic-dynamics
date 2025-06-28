@@ -18,7 +18,8 @@ if __name__ == "__main__":
     print(results.to_string(index=False, formatters={
         'agreement_rate': '{:.0%}'.format,
         'avg_time': '{:.2f}s'.format,
-        'max_time': '{:.2f}s'.format
+        'max_time': '{:.2f}s'.format,
+        'avg_percent_diff': '{:.1f}%'.format
     }))
 
     t=datetime.now(tz=tz).strftime("%Y-%m-%dT%H:%M:%S%z")
