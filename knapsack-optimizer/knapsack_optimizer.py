@@ -4,6 +4,7 @@ Implements a Bayesian approach to the 0-1 knapsack problem using PyMC
 """
 
 import math
+import time
 import numpy as np
 import pymc as pm
 import pymc.smc as smc
