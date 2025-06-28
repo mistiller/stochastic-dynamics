@@ -10,7 +10,7 @@ if __name__ == "__main__":
     
     # Print results dataframe
     print("\nSolver Scaling Results DataFrame:")
-    print(results.to_string(index=False, formatter={
+    print(results.to_string(index=False, formatters={
         'agreement_rate': '{:.0%}'.format,
         'avg_time': '{:.2f}s'.format,
         'max_time': '{:.2f}s'.format
