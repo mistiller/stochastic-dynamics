@@ -1,5 +1,5 @@
 from typing import Final
-import datetime
+from datetime import datetime, timezone
 from knapsack_optimizer import KnapsackOptimizer
 
 MAX_ITEMS:Final[int]=20
@@ -22,7 +22,6 @@ if __name__ == "__main__":
         'avg_percent_diff': '{:.1f}%'.format
     }))
 
-    from datetime import datetime, timezone
     t=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f'Completed at {t}')
 
