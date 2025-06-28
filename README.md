@@ -129,7 +129,7 @@ This enables efficient exploration of:
 
 ## Knapsack Problem Solver
 
-The `KnapsackOptimizer` class in `knapsack_solver/knapsack_optimizer.py` implements a Bayesian approach to the 0-1 knapsack problem using Hamiltonian Monte Carlo with constraint embedding. The script includes the `KnapsackOptimizer` class with methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
+The `KnapsackOptimizer` class in `knapsack_solver/knapsack_optimizer.py` implements a quantum-inspired Bayesian approach to the 0-1 knapsack problem using Hamiltonian Monte Carlo with constraint embedding and path integral formalism. The script includes the `KnapsackOptimizer` class with methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
 
 ### Key Features:
 - **Quantum-inspired Knapsack Solver**: Uses path integral formalism to encode the 0-1 knapsack problem with Bayesian inference and Hamiltonian Monte Carlo.
