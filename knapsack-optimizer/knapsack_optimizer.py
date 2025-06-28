@@ -25,7 +25,7 @@ class KnapsackOptimizer:
     """
     
     def __init__(self, values: List[float], weights: List[float], 
-                 capacity: float, hbar: float = 0.1):
+                 capacity: float, hbar: float = 0.1, penalty_factor: float = 1e3):
         """Initialize a knapsack problem instance.
         
         Args:
@@ -33,6 +33,7 @@ class KnapsackOptimizer:
             weights: List of item weights
             capacity: Maximum allowed total weight
             hbar: Quantum fluctuation parameter (higher = more exploration)
+            penalty_factor: Controls penalty for exceeding capacity.
         """
         if len(values) != len(weights):
             raise ValueError("Values and weights must have same length")
@@ -41,32 +42,36 @@ class KnapsackOptimizer:
         self.weights = np.array(weights)
         self.capacity = capacity
         self.hbar = hbar
+        self.penalty_factor = penalty_factor
         self.trace = None
         self.best_solution = None
         self._items = list(zip(self.values, self.weights))
         
     def build_model(self):
-        """Construct PyMC model with constrained action potential"""
+        """Construct PyMC model based on path integral action functional"""
         n_items = len(self.values)
     
         with pm.Model() as model:
-            # Continuous relaxation for inclusion variables
-            inclusion = pm.Uniform("inclusion", 0, 1, shape=n_items)
-        
-            # Calculate total value and weight
-            total_value = pm.math.dot(self.values, inclusion)
+            # 1. Continuous relaxation of discrete choices x_i
+            inclusion_probs = pm.Beta('inclusion_probs', alpha=1.0, beta=1.0, shape=n_items)
+
+            # Calculate total value and weight for monitoring
+            total_value = pm.math.dot(self.values, inclusion_probs)
             pm.Deterministic("total_value", total_value)
-            total_weight = pm.math.dot(self.weights, inclusion)
+            total_weight = pm.math.dot(self.weights, inclusion_probs)
             pm.Deterministic("total_weight", total_weight)
-        
-            # Constraint handling with smooth penalty
-            constraint = pm.math.switch(total_weight > self.capacity,
-                                      -(total_weight - self.capacity)**2,
-                                      0)
-        
-            # Action potential combining objective and constraint
-            action = (total_value + self.hbar * constraint) / self.hbar
-            pm.Potential('action', action)
+
+            # 2. Define the action functional S[p]
+            # Constraint term: quadratic penalty for exceeding capacity
+            weight_overage = pm.math.maximum(0., total_weight - self.capacity)
+            penalty = self.penalty_factor * (weight_overage ** 2)
+            
+            # Total action is negative value (objective) + penalty
+            action = -total_value + penalty
+
+            # 3. Define the path probability via pm.Potential
+            # The log-probability is -action / hbar
+            pm.Potential("path_probability", -action / self.hbar)
         
         return model
         
@@ -84,7 +89,7 @@ class KnapsackOptimizer:
             )
         
         # Extract best solution
-        posterior_inclusion = self.trace.posterior["inclusion"]
+        posterior_inclusion = self.trace.posterior["inclusion_probs"]
 
         # Vectorized solution processing
         all_samples = posterior_inclusion.values.reshape(-1, len(self.values))
@@ -237,7 +242,9 @@ class KnapsackOptimizer:
         
         # Print model diagnostics
         print("MCMC Diagnostics:")
-        print(f"Maximum Energy: {self.trace['action'].max():.2f}")
+        log_prob = self.trace.sample_stats["path_probability"]
+        action = -log_prob * self.hbar
+        print(f"Maximum Energy (Action): {action.max():.2f}")
         print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
         print(f"Number of Valid Solutions: {np.sum(self.valid_mask)}")
         
