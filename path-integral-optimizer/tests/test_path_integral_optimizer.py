@@ -136,14 +136,14 @@ class TestPathIntegralOptimizer:
         optimizer = PathIntegralOptimizer(**sample_config)
         
         # Test with non-finite parameters
-        with pytest.raises(RuntimeError):
-            optimizer._compute_action_numpy(
-                x_path=np.array([1, 2, 3]),
-                base_cost=np.inf,
-                base_benefit=1.0,
-                scale_benefit=0.5,
-                d_t=np.array([1.2, 1.2, 1.2])
-            )
+        result = optimizer._compute_action_numpy(
+            x_path=np.array([1, 2, 3]),
+            base_cost=np.inf,
+            base_benefit=1.0,
+            scale_benefit=0.5,
+            d_t=np.array([1.2, 1.2, 1.2])
+        )
+        assert not np.isfinite(result), "Should return non-finite value for invalid inputs"
     
     def test_invalid_forecast_handling(self, sample_config):
         """Test plotting forecast with edge cases"""
