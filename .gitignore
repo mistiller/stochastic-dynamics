@@ -36,9 +36,9 @@ venv/
 .DS_Store
 Thumbs.db
 
-
-
 *.aider.*
 .aider*
 
 .continue/
+.venv/
+.pytest_cache/

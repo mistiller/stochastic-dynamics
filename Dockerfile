@@ -1,7 +1,15 @@
 FROM python:3.12
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-WORKDIR /tmp/app
-COPY ./path-integral-optimizer/ /tmp/app
+WORKDIR /apps/
 
-CMD ["uv", "run", "main.py"]
+# Copy both packages
+COPY ./knapsack-optimizer/ /apps/knapsack-optimizer/
+COPY ./path-integral-optimizer/ /apps/path-integral-optimizer/
+
+# Accept package path as build argument
+ARG PACKAGE_PATH
+WORKDIR /apps/${PACKAGE_PATH}
+
+# Run tests for the specified package
+RUN uv run python -m pytest .
