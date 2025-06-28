@@ -275,6 +275,64 @@ class KnapsackOptimizer:
             except ValueError as e:
                 print("\nFPTAS not applicable:", str(e))
         
+    def compare_solvers_scaling(self, max_items: int = 10, runs_per_size: int = 5):
+        """Run comparative analysis of solvers with increasing problem size.
+        
+        Args:
+            max_items: Maximum number of items to test up to
+            runs_per_size: Number of random trials per item count
+            
+        Returns:
+            Dict of results with solver agreement rates and timing metrics
+        """
+        results = {}
+        
+        for n_items in range(3, max_items + 1):
+            agreements = 0
+            run_times = []
+            
+            for _ in range(runs_per_size):
+                # Generate random knapsack instance
+                values = np.random.randint(1, 100, size=n_items)
+                weights = np.random.randint(1, 50, size=n_items)
+                capacity = np.sum(weights) // 2  # Set capacity to half total weight
+                
+                # Create new optimizer
+                ko = KnapsackOptimizer(values.tolist(), weights.tolist(), capacity, hbar=0.5)
+                
+                try:
+                    # Get all solver results
+                    start_time = time.time()
+                    pi_sol = ko.solve(draws=1000, tune=500)
+                    pi_value = values[pi_sol].sum()
+                    pi_time = time.time() - start_time
+                    
+                    _, greedy_value, _ = ko.greedy_solver()
+                    _, dp_value, _ = ko.dynamic_programming_solver()
+                    
+                    # Check if all solvers agree
+                    if np.isclose(pi_value, greedy_value) and np.isclose(pi_value, dp_value):
+                        agreements += 1
+                        
+                    run_times.append(pi_time)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed for {n_items} items: {str(e)}")
+                    continue
+                    
+            results[n_items] = {
+                'agreement_rate': agreements / runs_per_size,
+                'avg_time': np.mean(run_times) if run_times else None,
+                'max_time': np.max(run_times) if run_times else None
+            }
+            
+            # Stop if we're taking too long
+            if results[n_items]['avg_time'] and results[n_items]['avg_time'] > 60:
+                logger.info(f"Stopping early at {n_items} items due to long runtime")
+                break
+                
+        return results
+
     def plot_results(self):
         """Visualize sampling results"""
         if self.trace is None:
