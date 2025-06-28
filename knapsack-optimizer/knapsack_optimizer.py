@@ -76,11 +76,11 @@ class KnapsackOptimizer:
             # Use Sequential Monte Carlo for discrete variables
             self.trace = smc.sample_smc(
                 draws=draws,
+                tune=tune,
                 chains=chains,
                 model=model,
                 kernel=smc.kernels.IMH,
                 compute_convergence_checks=False,
-                kernel_kwargs={"tune": tune}
             )
             
         # Extract best solution
@@ -123,32 +123,33 @@ class KnapsackOptimizer:
         """
         n = len(self.values)
         capacity = int(self.capacity)
-        
+        weights = self.weights.astype(int)
+
         # Initialize DP table
         dp = np.zeros((n + 1, capacity + 1))
-        
+
         # Build DP table
         for i in range(1, n + 1):
             for w in range(capacity + 1):
-                if self.weights[i-1] <= w:
+                if weights[i - 1] <= w:
                     dp[i][w] = max(
-                        self.values[i-1] + dp[i-1][int(w - self.weights[i-1])], 
-                        dp[i-1][w]
+                        self.values[i - 1] + dp[i - 1][w - weights[i - 1]],
+                        dp[i - 1][w],
                     )
                 else:
-                    dp[i][w] = dp[i-1][w]
-        
+                    dp[i][w] = dp[i - 1][w]
+
         # Backtrack to find selected items
         selected = []
         w = capacity
         for i in range(n, 0, -1):
-            if dp[i][w] != dp[i-1][w]:
-                selected.append(i-1)
-                w -= self.weights[i-1]
-        
+            if dp[i][w] != dp[i - 1][w]:
+                selected.append(i - 1)
+                w -= weights[i - 1]
+
         total_value = dp[n][capacity]
         total_weight = sum(self.weights[i] for i in selected)
-        
+
         return selected, total_value, total_weight
     
     def fptas_solver(self, epsilon: float = 0.1) -> Tuple[List[int], float, float]:
@@ -171,15 +172,16 @@ class KnapsackOptimizer:
         # Use dynamic programming with scaled values
         capacity = int(self.capacity)
         n = len(scaled_values)
+        weights = self.weights.astype(int)
         
         dp = np.zeros((capacity + 1, n + 1))
         
         for i in range(1, n + 1):
             for w in range(capacity + 1):
-                if self.weights[i-1] <= w:
+                if weights[i-1] <= w:
                     dp[w][i] = max(
                         dp[w][i-1],
-                        scaled_values[i-1] + dp[int(w - self.weights[i-1])][i-1]
+                        scaled_values[i-1] + dp[w - weights[i-1]][i-1]
                     )
                 else:
                     dp[w][i] = dp[w][i-1]
@@ -190,7 +192,7 @@ class KnapsackOptimizer:
         for i in range(n, 0, -1):
             if dp[w][i] != dp[w][i-1]:
                 selected.append(i-1)
-                w -= self.weights[i-1]
+                w -= weights[i-1]
                 
         total_value = sum(self.values[i] for i in selected)
         total_weight = sum(self.weights[i] for i in selected)
