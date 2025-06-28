@@ -6,6 +6,7 @@ Implements a Bayesian approach to the 0-1 knapsack problem using PyMC
 import math
 import numpy as np
 import pymc as pm
+import pymc.smc as smc
 import arviz as az
 import matplotlib.pyplot as plt
 from typing import List, Dict, Tuple, Optional, Union
@@ -74,7 +75,7 @@ class KnapsackOptimizer:
         with model:
             # Use Sequential Monte Carlo for discrete variables
             self.trace = pm.sample(draws=draws, tune=tune, chains=chains,
-                                 target_accept=0.95, step=pm.SMC())
+                                 target_accept=0.95, step=smc.SMC())
             
         # Extract best solution
         posterior = az.extract(self.trace, 'inclusion')
