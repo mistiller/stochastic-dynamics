@@ -59,7 +59,10 @@ class TestKnapsackOptimizer:
         # Verify solution validity
         total_weight = optimizer.weights[solution].sum()
         assert total_weight <= optimizer.capacity, "Solution exceeds capacity"
-        assert solution.any(), "At least one item should be selected"
+        if not solution.any():
+            pytest.fail("Optimizer returned empty solution")
+        with pytest.raises(RuntimeError):
+            KnapsackOptimizer([10]*10, [100]*10, 50).solve()  # Impossible problem
 
     def test_summary(self, optimizer, capsys):
         """Test summary method output contains expected keys"""

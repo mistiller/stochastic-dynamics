@@ -86,25 +86,26 @@ class KnapsackOptimizer:
         # Extract best solution
         posterior_inclusion = self.trace.posterior["inclusion"]
 
-        best_value = -1
-        best_solution = np.zeros(len(self.values), dtype=bool)
+        # Vectorized solution processing
+        all_samples = posterior_inclusion.values.reshape(-1, len(self.values))
+        all_selections = all_samples > 0.5
+        all_weights = all_selections @ self.weights
+        all_values = all_selections @ self.values
+        
+        # Find valid solutions
+        valid_mask = all_weights <= self.capacity
+        valid_values = np.where(valid_mask, all_values, -np.inf)
+        
+        if np.any(valid_mask):
+            best_idx = np.argmax(valid_values)
+        else:
+            raise RuntimeError("Optimizer failed to find any valid solutions within capacity constraints")
 
-        # Reshape to iterate over all samples
-        n_samples = (
-            posterior_inclusion.sizes["chain"] * posterior_inclusion.sizes["draw"]
-        )
-        all_samples = posterior_inclusion.values.reshape(n_samples, len(self.values))
-
-        for sample in all_samples:
-            # Round to get a discrete solution
-            current_selection = sample > 0.5
-            current_weight = np.dot(self.weights, current_selection)
-
-            if current_weight <= self.capacity:
-                current_value = np.dot(self.values, current_selection)
-                if current_value > best_value:
-                    best_value = current_value
-                    best_solution = current_selection
+        best_solution = all_selections[best_idx]
+        best_value = all_values[best_idx]
+        
+        if not np.any(best_solution):
+            raise RuntimeError("Optimizer returned empty solution - check constraint handling and priors")
 
         self.best_solution = best_solution
     
@@ -231,7 +232,13 @@ class KnapsackOptimizer:
         print(f"Path Integral Optimization Results:")
         print(f"Optimal Value: {path_integral_value:.2f}")
         print(f"Total Weight: {path_integral_weight:.2f}/{self.capacity:.2f}")
-        print(f"Included Items: {np.where(self.best_solution)[0]}")
+        print(f"Included Items: {np.where(self.best_solution)[0]}\n")
+        
+        # Print model diagnostics
+        print("MCMC Diagnostics:")
+        print(f"Maximum Energy: {self.trace['action"].max():.2f}")
+        print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
+        print(f"Number of Valid Solutions: {np.sum(valid_mask)}")
         
         if include_baseline:
             # Run greedy baseline
