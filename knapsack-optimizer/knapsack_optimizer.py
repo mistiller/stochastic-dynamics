@@ -48,45 +48,65 @@ class KnapsackOptimizer:
     def build_model(self):
         """Construct PyMC model with constrained action potential"""
         n_items = len(self.values)
-        
+    
         with pm.Model() as model:
-            # Bernoulli variables for item inclusion
-            inclusion = pm.Bernoulli('inclusion', p=0.5, shape=n_items)
-            
+            # Continuous relaxation for inclusion variables
+            inclusion = pm.Uniform("inclusion", 0, 1, shape=n_items)
+        
             # Calculate total value and weight
-            total_value = pm.math.sum(inclusion * self.values)
-            total_weight = pm.math.sum(inclusion * self.weights)
-            
+            total_value = pm.math.dot(self.values, inclusion)
+            total_weight = pm.math.dot(self.weights, inclusion)
+            pm.Deterministic("total_weight", total_weight)
+        
             # Constraint handling with smooth penalty
             constraint = pm.math.switch(total_weight > self.capacity,
                                       -(total_weight - self.capacity)**2,
                                       0)
-            
+        
             # Action potential combining objective and constraint
             pm.Potential('action', 
                         (total_value + self.hbar * constraint) / self.hbar)
-            
+        
         return model
         
     def solve(self, draws=2000, tune=1000, chains=4):
         """Run MCMC sampling to find optimal solution"""
         model = self.build_model()
-        
+    
         with model:
             # Use Sequential Monte Carlo for discrete variables
             self.trace = smc.sample_smc(
                 draws=draws,
                 chains=chains,
                 model=model,
-                kernel=smc.kernels.IMH,
                 compute_convergence_checks=False,
             )
-            
-        # Extract best solution
-        posterior = az.extract(self.trace, 'inclusion')
-        best_idx = np.argmax(posterior.sum('sample').values)
-        self.best_solution = posterior.sel(chain=best_idx).values.astype(bool)
         
+        # Extract best solution
+        posterior_inclusion = self.trace.posterior["inclusion"]
+
+        best_value = -1
+        best_solution = np.zeros(len(self.values), dtype=bool)
+
+        # Reshape to iterate over all samples
+        n_samples = (
+            posterior_inclusion.sizes["chain"] * posterior_inclusion.sizes["draw"]
+        )
+        all_samples = posterior_inclusion.values.reshape(n_samples, len(self.values))
+
+        for sample in all_samples:
+            # Round to get a discrete solution
+            current_selection = sample > 0.5
+            current_weight = np.dot(self.weights, current_selection)
+
+            if current_weight <= self.capacity:
+                current_value = np.dot(self.values, current_selection)
+                if current_value > best_value:
+                    best_value = current_value
+                    best_solution = current_selection
+
+        self.best_solution = best_solution
+    
         return self.best_solution
         
     def greedy_solver(self) -> Tuple[List[int], float, float]:
