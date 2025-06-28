@@ -72,7 +72,7 @@ class KnapsackOptimizer:
         model = self.build_model()
         
         with model:
-            # Use NUTS for continuous relaxation and Gibbs for discrete variables
+            # Use Sequential Monte Carlo for discrete variables
             self.trace = pm.sample(draws=draws, tune=tune, chains=chains,
                                  target_accept=0.95, step=pm.SMC())
             
