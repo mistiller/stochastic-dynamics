@@ -129,14 +129,14 @@ This enables efficient exploration of:
 
 ## Knapsack Problem Solver
 
-The `KnapsackOptimizer` class in `knapsack_solver/knapsack_optimizer.py` implements a quantum-inspired Bayesian approach to the 0-1 knapsack problem using Hamiltonian Monte Carlo with constraint embedding and path integral formalism. The script includes the `KnapsackOptimizer` class with methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
+The `KnapsackOptimizer` class in `knapsack_optimizer.py` implements a Bayesian approach to the 0-1 knapsack problem using PyMC for probabilistic modeling. The class provides methods for building the model (`build_model`), solving the problem (`solve`), summarizing the results (`summary`), and plotting the results (`plot_results`).
 
 ### Key Features:
-- **Quantum-inspired Knapsack Solver**: Uses path integral formalism to encode the 0-1 knapsack problem with Bayesian inference and Hamiltonian Monte Carlo.
+- **Bayesian Knapsack Solver**: Uses Hamiltonian Monte Carlo with a continuous relaxation of the discrete problem.
 - **Action Functional**: Combines the objective (total value) and constraint (capacity) into a single action potential with smooth penalty formulation.
-- **Constraint Handling**: Implements quantum-inspired constraint embedding through a continuous relaxation of the discrete problem.
-- **MCMC Sampling**: Uses Sequential Monte Carlo (SMC) sampling to explore the path space of possible solutions.
-- **Solution Extraction**: Identifies optimal solutions through posterior analysis of inclusion variables.
+- **Constraint Handling**: Uses a continuous relaxation approach with a quadratic penalty term for constraint violations.
+- **MCMC Sampling**: Uses PyMC's Sequential Monte Carlo (SMC) sampling to explore the probability space of possible solutions.
+- **Solution Extraction**: Identifies optimal solutions through posterior analysis of inclusion probabilities.
 - **Visualization**: Provides diagnostic plots for value and weight distributions.
 
 ### Example Usage:
@@ -153,34 +153,43 @@ solver.plot_results()
 ```
 
 ### Path Integral Formulation for Knapsack:
-The quantum-inspired path integral approach to discrete optimization problems like knapsack:
+The implementation follows a probabilistic approach to discrete optimization problems:
 
-1. **Encoding Discrete Choices**: Uses continuous relaxation of Bernoulli variables through quantum state superposition
-2. **Action Functional**: Formulates the knapsack problem as a path integral over possible solutions:
+1. **Continuous Relaxation**: Replaces binary variables (0/1) with continuous variables in [0,1] using a Beta distribution
+2. **Action Functional**: Formulates the optimization objective as:
    
 ```math
-S[x] = \frac{1}{\hbar} \left( \sum_{i=1}^N v_i x_i + \hbar \cdot \text{constraint}(x) \right)
+S[p] = - \sum_{i=1}^{n} v_i p_i + \lambda \cdot \max\left(0, \sum_{i=1}^{n} w_i p_i - W\right)^2
 ```
 
-3. **Constraint Handling**: Implements smooth constraint violation penalty through:
+Where:
+- $ p_i $ is the inclusion probability for item $ i $
+- $ v_i $ is the value of item $ i $
+- $ w_i $ is the weight of item $ i $
+- $ W $ is the knapsack capacity
+- $ \lambda $ is the constraint penalty factor
+- $ \hbar $ modulates the exploration of the solution space
+
+3. **Model Implementation**: The action functional is implemented in PyMC as:
 ```python
-constraint = pm.math.switch(total_weight > capacity,
-                          -(total_weight - capacity)**2,
-                          0)
+# Define the action functional S[p]
+weight_overage = pm.math.maximum(0., total_weight - capacity)
+penalty = penalty_factor * (weight_overage ** 2)
+action = -total_value + penalty
+
+# Define the path probability via pm.Potential
+log_prob = -action / hbar
+pm.Potential("path_probability", log_prob)
 ```
 
-4. **Quantum Exploration**: Uses path integral formalism to explore solution space with quantum-inspired fluctuations:
+4. **Solution Extraction**: Uses posterior analysis to identify the most likely solution:
 ```python
-pm.Potential('action', 
-            (total_value + hbar * constraint) / hbar)
+posterior_inclusion = self.trace.posterior["inclusion_probs"]
+all_samples = posterior_inclusion.values.reshape(-1, len(self.values))
+all_selections = all_samples > 0.5
 ```
 
-5. **Solution Extraction**: Finds optimal solutions through posterior analysis of the quantum state space:
-```python
-posterior = az.extract(trace, 'inclusion')
-best_idx = np.argmax(posterior.sum('sample').values)
-best_solution = posterior.sel(chain=best_idx).values.astype(bool)
-```
+This approach allows the optimizer to explore the solution space probabilistically while balancing the objective function and constraint satisfaction through the action functional.
 
 ## References
 

@@ -299,7 +299,7 @@ class KnapsackOptimizer:
             except ValueError as e:
                 print("\nFPTAS not applicable:", str(e))
         
-    def compare_solvers_scaling(self, max_items: int = 10, runs_per_size: int = 5):
+    def compare_solvers_scaling(self, max_items: int = 20, runs_per_size: int = 10):
         """Run comparative analysis of solvers with increasing problem size.
         
         Args:
