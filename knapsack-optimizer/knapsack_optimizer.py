@@ -71,7 +71,9 @@ class KnapsackOptimizer:
 
             # 3. Define the path probability via pm.Potential
             # The log-probability is -action / hbar
-            pm.Potential("path_probability", -action / self.hbar)
+            log_prob = -action / self.hbar
+            pm.Potential("path_probability", log_prob)
+            pm.Deterministic("log_path_probability", log_prob)
         
         return model
         
@@ -242,7 +244,7 @@ class KnapsackOptimizer:
         
         # Print model diagnostics
         print("MCMC Diagnostics:")
-        log_prob = self.trace.sample_stats["path_probability"]
+        log_prob = self.trace.posterior["log_path_probability"]
         action = -log_prob * self.hbar
         print(f"Maximum Energy (Action): {action.max():.2f}")
         print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
