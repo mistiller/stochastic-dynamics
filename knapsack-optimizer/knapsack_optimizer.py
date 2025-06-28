@@ -76,7 +76,6 @@ class KnapsackOptimizer:
             # Use Sequential Monte Carlo for discrete variables
             self.trace = smc.sample_smc(
                 draws=draws,
-                tune=tune,
                 chains=chains,
                 model=model,
                 kernel=smc.kernels.IMH,
