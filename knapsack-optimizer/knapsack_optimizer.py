@@ -55,6 +55,7 @@ class KnapsackOptimizer:
         
             # Calculate total value and weight
             total_value = pm.math.dot(self.values, inclusion)
+            pm.Deterministic("total_value", total_value)
             total_weight = pm.math.dot(self.weights, inclusion)
             pm.Deterministic("total_weight", total_weight)
         
@@ -64,8 +65,8 @@ class KnapsackOptimizer:
                                       0)
         
             # Action potential combining objective and constraint
-            pm.Potential('action', 
-                        (total_value + self.hbar * constraint) / self.hbar)
+            action = (total_value + self.hbar * constraint) / self.hbar
+            pm.Potential('action', action)
         
         return model
         
@@ -265,7 +266,7 @@ class KnapsackOptimizer:
         _, ax = plt.subplots(1, 2, figsize=(12, 4))
         
         # Plot value distribution
-        az.plot_posterior(self.trace, var_names=['action'], 
+        az.plot_posterior(self.trace, var_names=['total_value'], 
                         ax=ax[0], ref_val=self.values.sum())
         ax[0].set_title("Total Value Distribution")
         
