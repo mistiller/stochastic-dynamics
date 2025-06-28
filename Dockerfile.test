@@ -1,0 +1,11 @@
+FROM python:3.12
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+
+COPY ./knapsack-optimizer/ /knapsack-optimizer/
+WORKDIR /knapsack-optimizer/
+RUN uv run python -m pytest .
+
+COPY ./path-integral-optimizer/ /path-integral-optimizer//
+WORKDIR /path-integral-optimizer/
+RUN uv run python -m pytest .

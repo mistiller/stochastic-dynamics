@@ -4,7 +4,7 @@ Test suite for KnapsackOptimizer class in knapsack_solver.knapsack_optimizer
 
 import pytest
 import numpy as np
-from knapsack_solver.knapsack_optimizer import KnapsackOptimizer
+from knapsack_optimizer import KnapsackOptimizer
 
 # Define test cases using known values
 

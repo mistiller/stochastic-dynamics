@@ -1,0 +1,13 @@
+[project]
+name = "knapsack-optimizer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arviz>=0.21.0",
+    "loguru>=0.7.3",
+    "numpy>=2.3.1",
+    "pymc>=5.23.0",
+    "pytest>=8.4.1",
+]
