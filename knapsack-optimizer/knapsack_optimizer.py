@@ -48,7 +48,7 @@ class KnapsackOptimizer:
     """
     
     def __init__(self, values: List[float], weights: List[float], 
-                 capacity: float, hbar: float = 0.1, penalty_factor: float = 1e3):
+                 capacity: float, hbar: float = None, penalty_factor: float = None):
         """Initialize a knapsack problem instance.
         
         Args:
@@ -64,8 +64,11 @@ class KnapsackOptimizer:
         self.values = np.array(values)
         self.weights = np.array(weights)
         self.capacity = capacity
-        self.hbar = hbar
-        self.penalty_factor = penalty_factor
+        # Set default parameters using adaptive scaling if not provided
+        n_items = len(values)
+        self.base_hbar, self.base_penalty = self.adaptive_params(n_items)
+        self.hbar = hbar or self.base_hbar
+        self.penalty_factor = penalty_factor or self.base_penalty
         self.trace = None
         self.best_solution = None
         self._items = list(zip(self.values, self.weights))
@@ -75,8 +78,12 @@ class KnapsackOptimizer:
         n_items = len(self.values)
     
         with pm.Model() as model:
-            # 1. Continuous relaxation of discrete choices x_i
-            inclusion_probs = pm.Beta('inclusion_probs', alpha=1.0, beta=1.0, shape=n_items)
+            # 1. Initialize with greedy solution-informed priors
+            initial_alpha, initial_beta = self._get_initial_probs()
+            inclusion_probs = pm.Beta('inclusion_probs', 
+                                    alpha=initial_alpha,
+                                    beta=initial_beta, 
+                                    shape=n_items)
 
             # Calculate total value and weight for monitoring
             total_value = pm.math.dot(self.values, inclusion_probs)
@@ -416,6 +423,24 @@ class KnapsackOptimizer:
             'avg_percent_diff', 'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions'
         ]]
         return df
+
+    @staticmethod
+    def adaptive_params(n_items: int) -> tuple[float, float]:
+        """Dynamically adjust parameters based on problem size"""
+        base_hbar = 0.5 * (1 + n_items/20)  # Scale hbar with size
+        penalty_scale = 1e4 * (n_items**0.7)
+        return base_hbar, penalty_scale
+
+    def _get_initial_probs(self) -> tuple[np.ndarray, np.ndarray]:
+        """Get Beta prior parameters based on greedy solution"""
+        try:
+            greedy_sol = self.greedy_solver()[0]
+            init_probs = np.zeros(len(self.values))
+            for i in greedy_sol:
+                init_probs[i] = 0.9  # Bias towards inclusion
+            return 1 + init_probs, 1 + (1 - init_probs)
+        except:
+            return np.ones(len(self.values)), np.ones(len(self.values))
 
     def plot_results(self):
         """Visualize sampling results"""
