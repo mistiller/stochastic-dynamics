@@ -313,6 +313,7 @@ class KnapsackOptimizer:
         for n_items in range(3, max_items + 1):
             agreements = 0
             run_times = []
+            valid_values = []
             
             for _ in range(runs_per_size):
                 # Generate random knapsack instance
@@ -329,6 +330,11 @@ class KnapsackOptimizer:
                     pi_sol = ko.solve(draws=1000, tune=500)
                     pi_value = values[pi_sol].sum()
                     pi_time = time.time() - start_time
+                    
+                    # Collect all valid solution values
+                    valid_vals = values[ko.valid_mask]
+                    if len(valid_vals) > 0:
+                        valid_values.extend(valid_vals)
                     
                     _, greedy_value, _ = ko.greedy_solver()
                     _, dp_value, _ = ko.dynamic_programming_solver()
@@ -348,10 +354,12 @@ class KnapsackOptimizer:
                 'optimizer': 'Path Integral',
                 'items': n_items,
                 'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
+                'avg_value': np.mean(valid_values) if valid_values else np.nan,
                 'avg_time': np.mean(run_times) if run_times else None,
                 'max_time': np.max(run_times) if run_times else None,
                 'errors': error_count,
-                'runs': runs_per_size
+                'runs': runs_per_size,
+                'valid_solutions': len(valid_values)
             }
             
             # Stop if we're taking too long
@@ -361,7 +369,7 @@ class KnapsackOptimizer:
                 
         # Convert results to DataFrame
         df = pd.DataFrame(results.values()).sort_values('items')
-        df = df[['optimizer', 'items', 'agreement_rate', 'avg_time', 'max_time', 'errors', 'runs']]
+        df = df[['optimizer', 'items', 'agreement_rate', 'avg_value', 'avg_time', 'max_time', 'errors', 'runs', 'valid_solutions']]
         return df
 
     def plot_results(self):
