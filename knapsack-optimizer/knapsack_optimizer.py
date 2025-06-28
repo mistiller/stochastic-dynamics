@@ -236,7 +236,7 @@ class KnapsackOptimizer:
         
         # Print model diagnostics
         print("MCMC Diagnostics:")
-        print(f"Maximum Energy: {self.trace['action"].max():.2f}")
+        print(f"Maximum Energy: {self.trace['action'].max():.2f}")
         print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
         print(f"Number of Valid Solutions: {np.sum(valid_mask)}")
         
