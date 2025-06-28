@@ -2,6 +2,7 @@
 Benchmark suite for KnapsackOptimizer performance tracking
 """
 import time
+import numpy as np
 import pandas as pd
 from loguru import logger
 from knapsack_optimizer import KnapsackOptimizer
