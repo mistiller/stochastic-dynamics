@@ -36,9 +36,9 @@ class TestPathIntegralOptimizer:
         optimizer = PathIntegralOptimizer(**sample_config)
         assert optimizer is not None
     
-    def test_invalid_T(self):
+    def test_invalid_T(self, sample_config):
         """Test initialization with invalid T values"""
-        config = self.sample_config()
+        config = sample_config.copy()
         config["T"] = 0  # Change to invalid value
         
         with pytest.raises(ValueError):
