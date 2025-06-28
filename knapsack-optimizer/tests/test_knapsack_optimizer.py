@@ -56,6 +56,10 @@ class TestKnapsackOptimizer:
         assert isinstance(solution, np.ndarray)
         assert solution.dtype == bool
         assert len(solution) == len(DUMMY_VALUES)
+        # Verify solution validity
+        total_weight = optimizer.weights[solution].sum()
+        assert total_weight <= optimizer.capacity, "Solution exceeds capacity"
+        assert solution.any(), "At least one item should be selected"
 
     def test_summary(self, optimizer, capsys):
         """Test summary method output contains expected keys"""
