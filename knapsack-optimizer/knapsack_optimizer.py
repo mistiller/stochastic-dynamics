@@ -122,9 +122,10 @@ class KnapsackOptimizer:
         all_weights = all_selections @ self.weights
         all_values = all_selections @ self.values
         
-        # Find valid solutions
-        valid_mask = all_weights <= self.capacity
-        self.valid_mask = valid_mask  # Store as instance variable for diagnostics
+        # Find valid solutions and store diagnostics
+        valid_mask = (all_weights <= self.capacity) & (all_values > 0)
+        self.valid_mask = valid_mask
+        self.all_values = all_values  # Store values for later analysis
         valid_values = np.where(valid_mask, all_values, -np.inf)
         
         if np.any(valid_mask):
@@ -347,9 +348,12 @@ class KnapsackOptimizer:
                     run_times.append(pi_time)
                     pi_success = True
                     
-                    # Collect valid solution values
-                    valid_vals = values[ko.valid_mask]
-                    valid_values.extend(valid_vals if len(valid_vals) > 0 else [0])
+                    # Collect valid solution total values
+                    valid_vals = ko.all_values[ko.valid_mask]
+                    if len(valid_vals) > 0:
+                        valid_values.extend(valid_vals)
+                    else:
+                        valid_values.append(0)  # Track failed runs explicitly
                     
                 except Exception as e:
                     logger.warning(f"Path Integral failed for {n_items} items: {str(e)}")
