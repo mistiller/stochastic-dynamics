@@ -42,3 +42,4 @@ Thumbs.db
 .continue/
 .venv/
 .pytest_cache/
+*.csv

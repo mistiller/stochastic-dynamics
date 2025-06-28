@@ -1,4 +1,8 @@
+from typing import Final
 from knapsack_optimizer import KnapsackOptimizer
+
+MAX_ITEMS:Final[int]=20
+RUNS_PER_SIZE:Final[int]=10
 
 if __name__ == "__main__":
     # Run scaling comparison simulation
@@ -6,7 +10,7 @@ if __name__ == "__main__":
     dummy_weights = [1] # Weights will be generated in the simulation
     
     solver = KnapsackOptimizer(dummy_values, dummy_weights, capacity=1, hbar=0.5)
-    results = solver.compare_solvers_scaling(max_items=10, runs_per_size=5)
+    results = solver.compare_solvers_scaling(max_items=MAX_ITEMS, runs_per_size=RUNS_PER_SIZE)
     
     # Print results dataframe
     print("\nSolver Scaling Results DataFrame:")
@@ -15,3 +19,8 @@ if __name__ == "__main__":
         'avg_time': '{:.2f}s'.format,
         'max_time': '{:.2f}s'.format
     }))
+
+    t=datetime.datetime.now(tz=tz).strftime("%Y-%m-%dT%H:%M:%S%z")
+    print(f'Completed at {t}')
+
+    result.to_csv(f'simulation_results/{t}.csv')
