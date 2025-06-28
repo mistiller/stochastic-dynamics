@@ -22,7 +22,7 @@ if __name__ == "__main__":
         'avg_percent_diff': '{:.1f}%'.format
     }))
 
-    from datetime import timezone
+    from datetime import datetime, timezone
     t=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f'Completed at {t}')
 
