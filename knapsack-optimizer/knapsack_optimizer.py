@@ -79,7 +79,8 @@ class KnapsackOptimizer:
                 chains=chains,
                 model=model,
                 kernel=smc.kernels.IMH,
-                compute_convergence_checks=False
+                compute_convergence_checks=False,
+                kernel_kwargs={"tune": tune}
             )
             
         # Extract best solution
