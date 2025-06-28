@@ -1,17 +1,23 @@
 #!/bin/bash
 set -e
 
-# Build and run the test Docker image
-echo "Building test environment..."
-docker build -f Dockerfile.test -t path-integral-optimizer-test .
+# Function to run tests for a specific package
+run_package_tests() {
+    local package_name=$1
+    local package_path=$2
+    
+    echo "Building test environment for $package_name..."
+    docker build -f Dockerfile.test --build-arg PACKAGE_PATH="$package_path" -t path-integral-optimizer-test .
+    
+    echo "Running $package_name tests..."
+    docker run --rm path-integral-optimizer-test
+}
 
-echo "Running tests..."
-docker run --rm path-integral-optimizer-test
+# Run tests for both packages
+echo "Testing knapsack-optimizer..."
+run_package_tests "knapsack-optimizer" "knapsack-optimizer"
 
-# Check for test output and report results
-if [ $? -eq 0 ]; then
-    echo -e "\nAll tests passed successfully!"
-else
-    echo -e "\nSome tests failed. Please check the output above for details."
-    exit 1
-fi
+echo -e "\nTesting path-integral-optimizer..."
+run_package_tests "path-integral-optimizer" "path-integral-optimizer"
+
+echo -e "\nAll tests passed successfully!"
