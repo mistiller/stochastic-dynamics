@@ -373,6 +373,9 @@ class KnapsackOptimizer:
                 
                 # Check agreement only if PI succeeded
                 if pi_success:
+                    # Initialize percent_diff_values at the start of each run
+                    percent_diff_values = []
+                    
                     # Calculate percentage difference from baselines
                     avg_baseline = (greedy_value + dp_value) / 2
                     percent_diff = (pi_value - avg_baseline) / avg_baseline * 100
@@ -384,6 +387,8 @@ class KnapsackOptimizer:
                     
                 else:
                     percent_diff_values.append(np.nan)
+            # Calculate average percent diff at the end of all runs for this item count
+            avg_percent_diff = np.nanmean(percent_diff_values) if percent_diff_values else np.nan
             error_count = runs_per_size - len(run_times)
             results[n_items] = {
                 'optimizer': 'Path Integral',
@@ -397,7 +402,11 @@ class KnapsackOptimizer:
                 'errors': error_count,
                 'runs': runs_per_size,
                 'valid_solutions': len(valid_values),
-                'avg_percent_diff': np.nanmean(percent_diff_values) if percent_diff_values else np.nan
+                'avg_percent_diff': avg_percent_diff
+            }
+        
+            # Stop early if we're taking too long
+            if results[n_items]['avg_time'] and results[n_items]['avg_time'] > 60:
             }
             
             # Stop if we're taking too long

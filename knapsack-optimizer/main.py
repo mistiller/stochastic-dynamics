@@ -22,7 +22,8 @@ if __name__ == "__main__":
         'avg_percent_diff': '{:.1f}%'.format
     }))
 
-    t=datetime.now(tz=tz).strftime("%Y-%m-%dT%H:%M:%S%z")
+    from datetime import timezone
+    t=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f'Completed at {t}')
 
-    result.to_csv(f'simulation_results/{t}.csv')
+    results.to_csv(f'simulation_results/{t}.csv')
