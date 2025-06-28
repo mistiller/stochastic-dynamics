@@ -1,4 +1,5 @@
 from typing import Final
+import datetime
 from knapsack_optimizer import KnapsackOptimizer
 
 MAX_ITEMS:Final[int]=20
@@ -20,7 +21,7 @@ if __name__ == "__main__":
         'max_time': '{:.2f}s'.format
     }))
 
-    t=datetime.datetime.now(tz=tz).strftime("%Y-%m-%dT%H:%M:%S%z")
+    t=datetime.now(tz=tz).strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f'Completed at {t}')
 
     result.to_csv(f'simulation_results/{t}.csv')
