@@ -63,7 +63,7 @@ class TestPathIntegralOptimizer:
             input=data.input,
             cost=data.cost,
             benefit=data.benefit,
-            total_resource=data.total_resource,
+            total_resource=sample_config["total_resource"],  # Get from config since Dataset doesn't store this
             hbar=sample_config["hbar"],
             num_steps=sample_config["num_steps"],
             burn_in=sample_config["burn_in"],
