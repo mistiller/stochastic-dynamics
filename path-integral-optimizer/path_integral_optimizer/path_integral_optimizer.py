@@ -101,15 +101,15 @@ class PathIntegralOptimizer:
         self.total_resource: float = total_resource
         self._T: int = T  # Make T immutable after init
         self.hbar: float = hbar
+        self.num_steps: int = num_steps
+        self.burn_in: int = burn_in
+        self.historical_t: Optional[np.ndarray] = historical_t
+        self.historical_input: Optional[np.ndarray] = historical_input
 
     @property
     def T(self) -> int:
         """Read-only property for time horizon"""
         return self._T
-        self.num_steps: int = num_steps
-        self.burn_in: int = burn_in
-        self.historical_t: Optional[np.ndarray] = historical_t
-        self.historical_input: Optional[np.ndarray] = historical_input
 
         self.mcmc_paths: Optional[np.ndarray] = None
         self.actions: Optional[np.ndarray] = None
