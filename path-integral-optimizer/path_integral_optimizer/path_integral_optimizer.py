@@ -59,8 +59,8 @@ class PathIntegralOptimizer:
             total_resource (float): Fixed total resource.
             T (int): Fixed number of time steps for the optimization/forecast horizon. Must be >= 1.
             hbar (float): Fixed noise parameter.
-            num_steps (int): Number of MCMC steps.
-            burn_in (int): Number of burn-in steps.
+            num_steps (int): Number of MCMC steps (recommended >= 4000).
+            burn_in (int): Number of burn-in steps (recommended >= 2000).
             historical_t (Optional[np.ndarray]): Time steps of the historical input data.
             historical_input (Optional[np.ndarray]): Values of the historical input data.
         """
@@ -223,10 +223,10 @@ class PathIntegralOptimizer:
             self.trace = pm.sample(
                 draws=self.num_steps,
                 tune=self.burn_in,
-                target_accept=0.95,  # Adjusted target_accept
-                max_treedepth=15,  # Increased max_treedepth
-                chains=4,
-                cores=4,
+                target_accept=0.95,
+                max_treedepth=12,
+                chains=8,
+                cores=8,
                 return_inferencedata=True,
             )
 
