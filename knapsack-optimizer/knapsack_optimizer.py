@@ -89,10 +89,10 @@ class KnapsackOptimizer:
             # 2. Add GP-based temporal correlation
             # As described in research paper section 4.2
             if n_items > 1:
-                # Define GP hyperparameters
-                gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
-                gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
-                gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
+                # Define GP hyperparameters with unique names
+                gp_ell = pm.Gamma("gp_ell_build_model", alpha=2.0, beta=1.0)
+                gp_eta = pm.HalfNormal("gp_eta_build_model", sigma=1.0)
+                gp_mean = pm.Normal("gp_mean_build_model", mu=1.0, sigma=0.5)
                 
                 # Construct GP covariance matrix
                 cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
@@ -506,10 +506,10 @@ class KnapsackOptimizer:
             if n_items > 1:
                 t = np.arange(n_items)[:, None]
                 with pm.Model():
-                    # Define GP parameters
-                    gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
-                    gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
-                    gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
+                    # Define GP parameters with unique names for this context
+                    gp_ell = pm.Gamma("gp_ell_initial_probs", alpha=2.0, beta=1.0)
+                    gp_eta = pm.HalfNormal("gp_eta_initial_probs", sigma=1.0)
+                    gp_mean = pm.Normal("gp_mean_initial_probs", mu=1.0, sigma=0.5)
                     
                     # Build GP covariance matrix
                     cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
