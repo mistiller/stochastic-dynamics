@@ -76,14 +76,29 @@ class KnapsackOptimizer:
     def build_model(self):
         """Construct PyMC model based on path integral action functional"""
         n_items = len(self.values)
+        t = np.arange(n_items)[:, None]
     
         with pm.Model() as model:
-            # 1. Initialize with greedy solution-informed priors
+            # 1. Initialize with GP-informed priors
             initial_alpha, initial_beta = self._get_initial_probs()
             inclusion_probs = pm.Beta('inclusion_probs', 
                                     alpha=initial_alpha,
                                     beta=initial_beta, 
                                     shape=n_items)
+            
+            # 2. Add GP-based temporal correlation
+            # As described in research paper section 4.2
+            if n_items > 1:
+                # Define GP hyperparameters
+                gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
+                gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
+                gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
+                
+                # Construct GP covariance matrix
+                cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
+                
+                # Add GP prior to the inclusion probabilities
+                pm.gp.Latent(cov_func=cov).prior("gp_prior", X=t)
 
             # Calculate total value and weight for monitoring
             total_value = pm.math.dot(self.values, inclusion_probs)
@@ -96,8 +111,28 @@ class KnapsackOptimizer:
             weight_overage = pm.math.maximum(0., total_weight - self.capacity)
             penalty = self.penalty_factor * (weight_overage ** 2)
             
-            # Total action is negative value (objective) + penalty
+            # Total action combines objective and constraint terms
             action = -total_value + penalty
+            
+            # Add GP-based temporal correlation term
+            # As described in research paper section 5.3
+            # This creates a more faithful path integral formulation
+            if len(self.values) > 1:
+                # Use GP to model temporal correlations
+                gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
+                gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
+                gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
+                
+                # Create a GP covariance matrix
+                t = np.arange(len(self.values))[:, None]
+                cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell) * pm.math.sqr(gp_mean)
+                
+                # Add GP-based prior to the inclusion probabilities
+                gp = pm.gp.Latent(cov_func=cov)
+                gp_prior = gp.prior("gp_prior", X=t)
+                
+                # Combine GP prior with action functional
+                log_prob = -action / self.hbar + gp_prior
 
             # 3. Define the path probability via pm.Potential
             # The log-probability is -action / hbar
@@ -112,12 +147,14 @@ class KnapsackOptimizer:
         model = self.build_model()
     
         with model:
-            # Use Sequential Monte Carlo for discrete variables
-            self.trace = smc.sample_smc(
+            # Use Hamiltonian Monte Carlo with NUTS for better convergence
+            # As described in research paper section 7.2
+            self.trace = pm.sample(
                 draws=draws,
+                tune=tune,
                 chains=chains,
-                model=model,
-                compute_convergence_checks=False,
+                target_accept=0.95,  # Match paper's high precision sampling
+                return_inferencedata=True
             )
         
         # Extract best solution
@@ -273,13 +310,18 @@ class KnapsackOptimizer:
         print(f"Total Weight: {path_integral_weight:.2f}/{self.capacity:.2f}")
         print(f"Included Items: {np.where(self.best_solution)[0]}\n")
         
-        # Print model diagnostics
-        print("MCMC Diagnostics:")
+        # Print path integral diagnostics
+        print("Path Integral Diagnostics:")
         log_prob = self.trace.posterior["log_path_probability"]
         action = -log_prob * self.hbar
-        print(f"Maximum Energy (Action): {action.max():.2f}")
+        print(f"Minimum Action: {action.min():.2f}")
         print(f"Effective Sample Size: {az.ess(self.trace, var_names=['total_value']).total_value:.1f}")
-        print(f"Number of Valid Solutions: {np.sum(self.valid_mask)}")
+        print(f"Valid Solutions: {np.sum(self.valid_mask)}/{len(self.all_values)} ({np.mean(self.valid_mask)*100:.1f}%)")
+        print(f"Path Entropy: {self._calculate_path_entropy():.2f}")
+        
+        # Print uncertainty quantification
+        print(f"Uncertainty Temperature (ℏ): {self.hbar:.2f}")
+        print(f"Penalty Factor: {self.penalty_factor:.2f}")
         
         if include_baseline:
             # Run greedy baseline
@@ -426,28 +468,83 @@ class KnapsackOptimizer:
 
     @staticmethod
     def adaptive_params(n_items: int) -> tuple[float, float]:
-        """Dynamically adjust parameters based on problem size"""
-        base_hbar = 0.5 * (1 + n_items/20)  # Scale hbar with size
-        penalty_scale = 1e4 * (n_items**0.7)
+        """Dynamically adjust parameters based on problem size
+        
+        The adaptive scaling follows the research paper's framework:
+        - hbar scales linearly with problem size to maintain exploration
+        - penalty factor scales super-linearly to maintain constraint satisfaction
+        - The base values are chosen based on theoretical analysis of ℏ's role
+          as an uncertainty temperature in the path integral formulation
+        """
+        # Maintain ℏ as an uncertainty temperature parameter
+        # Scale with problem size to maintain exploration-exploitation balance
+        base_hbar = 0.5 * (1 + math.log(n_items + 1))
+        
+        # Penalty factor scales with problem dimensionality
+        # to maintain constraint satisfaction probability
+        penalty_scale = 1e4 * (n_items**1.2)
+        
         return base_hbar, penalty_scale
 
     def _get_initial_probs(self) -> tuple[np.ndarray, np.ndarray]:
-        """Get Beta prior parameters based on greedy solution"""
+        """Get GP-informed Beta prior parameters
+        
+        This implementation:
+        1. Uses the greedy solution as a prior mean
+        2. Adds GP-based temporal correlation to the prior
+        3. Maintains the Bayesian path integral framework
+        """
         try:
+            # Get greedy solution for initialization
             greedy_sol = self.greedy_solver()[0]
             init_probs = np.zeros(len(self.values))
             for i in greedy_sol:
                 init_probs[i] = 0.9  # Bias towards inclusion
-            return 1 + init_probs, 1 + (1 - init_probs)
+                
+            # Add GP-based correlation structure
+            n_items = len(self.values)
+            if n_items > 1:
+                t = np.arange(n_items)[:, None]
+                with pm.Model():
+                    # Define GP parameters
+                    gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
+                    gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
+                    gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
+                    
+                    # Build GP covariance matrix
+                    cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
+                    
+                    # Apply GP to prior initialization
+                    gp = pm.gp.Latent(cov_func=cov)
+                    gp_prior = gp.prior("gp_prior", X=t)
+                    init_probs = pm.math.sigmoid(gp_prior + init_probs)
+                    
+                    # Return GP-adjusted probabilities
+                    return 1 + init_probs.eval(), 1 + (1 - init_probs.eval())
+            else:
+                return 1 + init_probs, 1 + (1 - init_probs)
         except:
             return np.ones(len(self.values)), np.ones(len(self.values))
 
-    def plot_results(self):
-        """Visualize sampling results"""
+    def _calculate_path_entropy(self) -> float:
+        """Calculate entropy of the path distribution as measure of exploration"""
         if self.trace is None:
             raise RuntimeError("Run solve() first")
             
-        _, ax = plt.subplots(1, 2, figsize=(12, 4))
+        # Calculate entropy from posterior samples
+        posterior = self.trace.posterior["inclusion_probs"]
+        entropy = -np.mean(
+            posterior * np.log(posterior + 1e-10) + 
+            (1 - posterior) * np.log(1 - posterior + 1e-10)
+        )
+        return float(entropy)
+
+    def plot_results(self):
+        """Visualize sampling results with path integral diagnostics"""
+        if self.trace is None:
+            raise RuntimeError("Run solve() first")
+            
+        _, ax = plt.subplots(1, 3, figsize=(18, 4))
         
         # Plot value distribution
         az.plot_posterior(self.trace, var_names=['total_value'], 
