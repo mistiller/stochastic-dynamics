@@ -183,15 +183,15 @@ Based on recent results, we propose these prioritized improvements with implemen
          )
      ```
 
-### Revised Comparative Analysis
+### Comparative Analysis
 
-| Metric                | Path Integral              | Classical Methods          | Improvement Target |
-|-----------------------|----------------------------|----------------------------|--------------------|
-| Agreement Rate        | 58%                        | 100%                       | 75%                |
-| Solve Time (20 items) | 1.52s                      | 0.02s (DP)                 | 1.2s               |
-| Valid Solutions       | 98.7%                      | 100%                       | 99.9%              |
-| Value Ratio           | 101.3% of classical        | 100%                       | 102%               |
-| Uncertainty Quant     | Full posterior             | None                       | Maintain           |
+| Metric                | Path Integral              | Classical Methods          | Current Performance |
+|-----------------------|----------------------------|----------------------------|---------------------|
+| Agreement Rate        | 63%                        | 100%                       | -                  |
+| Solve Time (10 items) | 45.64s                     | 0.02s (DP)                 | -                  |
+| Valid Solutions       | 95%+                       | 100%                       | -                  |
+| Value Ratio           | 100.7% of classical       | 100%                       | -                  |
+| Uncertainty Quant     | Full posterior             | None                       | -                  |
 
 ### Implementation Roadmap
 
@@ -211,8 +211,8 @@ Based on recent results, we propose these prioritized improvements with implemen
    - Add GPU acceleration for large problems
 
 Expected Outcomes:
-- 25% improvement in agreement rates
-- 40% reduction in solve times
+- 25% improvement in agreement rates (already at 63%)
+- 40% reduction in solve times (current average is ~45s)
 - 99%+ valid solutions across all sizes
 - Linear scaling to 50+ items with GPU support
 
