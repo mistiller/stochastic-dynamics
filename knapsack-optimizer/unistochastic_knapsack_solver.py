@@ -37,12 +37,12 @@ class UnistochasticKnapsackSolver:
         self.best_solution = None
         
     def build_model(self):
-        """Construct unitary matrix encoding problem constraints"""
+        """Construct unitary matrix encoding problem constraints using sparse diagonal format"""
         # Size of state space grows exponentially with items (2^n)
         self.state_space_size = 2 ** self.n_items
-        self.unitary_matrix = np.zeros((self.state_space_size, self.state_space_size), dtype=complex)
         
-        # Build diagonal unitary matrix encoding values/weights
+        # Build diagonal entries using sparse storage
+        diag = np.zeros(self.state_space_size, dtype=complex)
         for i in range(self.state_space_size):
             selection = self._int_to_selection(i)
             total_value = self._calculate_value(selection)
@@ -50,11 +50,11 @@ class UnistochasticKnapsackSolver:
             
             # Encode value in phase, zero out invalid states
             if total_weight <= self.capacity:
-                phase = np.exp(1j * total_value / self.hbar)
-            else:
-                phase = 0
+                diag[i] = np.exp(1j * total_value / self.hbar)
                 
-            self.unitary_matrix[i, i] = phase
+        # Store as sparse diagonal matrix
+        from scipy.sparse import dia_matrix
+        self.unitary_matrix = dia_matrix((diag, [0]), shape=(self.state_space_size, self.state_space_size), dtype=complex)
             
     def solve(self, samples: int = 1000):
         """Run unistochastic evolution and measurement collapse"""
