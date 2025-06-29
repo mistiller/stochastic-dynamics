@@ -1,6 +1,9 @@
 FROM python:3.12
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install system dependencies for BLAS
+RUN apt-get update && apt-get install -y libopenblas-dev
+
 WORKDIR /apps/
 
 # Copy both packages
@@ -11,5 +14,6 @@ COPY ./path-integral-optimizer/ /apps/path-integral-optimizer/
 ARG PACKAGE_PATH
 WORKDIR /apps/${PACKAGE_PATH}
 
-# Run tests for the specified package
+# Configure PyTensor to use OpenBLAS and run tests
+ENV PYTENSOR_FLAGS="blas__ldflags=-lopenblas"
 RUN uv run python -m pytest .
