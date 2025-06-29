@@ -25,4 +25,4 @@ if __name__ == "__main__":
     t=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
     print(f'Completed at {t}')
 
-    results.to_csv(f'simulation_results/{t}.csv')
+    results.to_csv(f'results/{t}.csv')

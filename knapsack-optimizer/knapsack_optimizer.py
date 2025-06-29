@@ -360,7 +360,7 @@ class KnapsackOptimizer:
         """
         results = {}
         
-        for n_items in range(3, max_items + 1):
+        for n_items in range(10, max_items + 1):
             agreements = 0
             run_times = []
             valid_values = []
