@@ -99,8 +99,13 @@ class PathIntegralOptimizer:
 
         # Store fixed values and validated historical data
         self.total_resource: float = total_resource
-        self.T: int = T
+        self._T: int = T  # Make T immutable after init
         self.hbar: float = hbar
+
+    @property
+    def T(self) -> int:
+        """Read-only property for time horizon"""
+        return self._T
         self.num_steps: int = num_steps
         self.burn_in: int = burn_in
         self.historical_t: Optional[np.ndarray] = historical_t
