@@ -267,9 +267,15 @@ def build_knapsack_path_integral_model(values, weights, capacity, hbar=1.0, pena
 #
 # model = build_knapsack_path_integral_model(values, weights, capacity, hbar=0.5)
 # with model:
-#     trace = pm.sample(tune=2000, draws=4000, target_accept=0.9, 
-#                      nuts_sampler='nutpie', max_treedepth=15,
-#                      chains=4, cores=4)
+#     trace = pm.sample(
+#         tune=2000, 
+#         draws=4000,
+#         target_accept=0.95,
+#         nuts_sampler='nutpie',
+#         max_treedepth=15,
+#         chains=4, 
+#         cores=4
+#     )
 ```
 
 This model provides a complete plan for implementation. By running an MCMC sampler like NUTS on this model, we can obtain posterior distributions for the `inclusion_probs`. Analyzing these posteriors will reveal the optimal or near-optimal item selections, thus solving the knapsack problem through the lens of path integral optimization.
