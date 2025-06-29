@@ -11,7 +11,7 @@ def run_scaling_benchmark(max_items: int = 50, runs_per_size: int = 10) -> pd.Da
     """Run comprehensive performance benchmarks across problem sizes."""
     results = []
     
-    for n_items in range(3, max_items + 1):
+    for n_items in range(10, max_items + 1):
         start_time = time.time()
         logger.info(f"Running benchmarks for {n_items} items...")
         
@@ -47,5 +47,5 @@ def save_benchmark_results(df: pd.DataFrame, filename: str = "results/benchmark_
     logger.info(f"Saved benchmark results to {filename}")
 
 if __name__ == "__main__":
-    benchmark_df = run_scaling_benchmark()
+    benchmark_df = run_scaling_benchmark(max_items=50)
     save_benchmark_results(benchmark_df)

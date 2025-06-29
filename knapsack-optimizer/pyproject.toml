@@ -8,6 +8,7 @@ dependencies = [
     "arviz>=0.21.0",
     "loguru>=0.7.3",
     "numpy>=2.3.1",
+    "nutpie>=0.15.1",
     "pymc>=5.23.0",
     "pytest>=8.4.1",
 ]

@@ -348,7 +348,7 @@ class KnapsackOptimizer:
             except ValueError as e:
                 print("\nFPTAS not applicable:", str(e))
         
-    def compare_solvers_scaling(self, max_items: int = 20, runs_per_size: int = 10):
+    def compare_solvers_scaling(self, min_items:int = 5, max_items: int = 10, runs_per_size: int = 10):
         """Run comparative analysis of solvers with increasing problem size.
         
         Args:
@@ -358,9 +358,8 @@ class KnapsackOptimizer:
         Returns:
             Dict of results with solver agreement rates and timing metrics
         """
-        results = {}
         
-        for n_items in range(10, max_items + 1):
+        for n_items in range(min_items, max_items + 1):
             agreements = 0
             run_times = []
             valid_values = []

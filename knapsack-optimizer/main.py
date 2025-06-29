@@ -2,6 +2,8 @@ from typing import Final
 from datetime import datetime, timezone
 from knapsack_optimizer import KnapsackOptimizer
 
+
+MAX_ITEMS:Final[int]=5
 MAX_ITEMS:Final[int]=10
 RUNS_PER_SIZE:Final[int]=3
 
@@ -11,7 +13,7 @@ if __name__ == "__main__":
     dummy_weights = [1] # Weights will be generated in the simulation
     
     solver = KnapsackOptimizer(dummy_values, dummy_weights, capacity=1, hbar=0.5)
-    results = solver.compare_solvers_scaling(max_items=MAX_ITEMS, runs_per_size=RUNS_PER_SIZE)
+    results = solver.compare_solvers_scaling(min_items=MIN_ITEMS, max_items=MAX_ITEMS, runs_per_size=RUNS_PER_SIZE)
     
     # Print results dataframe
     print("\nSolver Scaling Results DataFrame:")
