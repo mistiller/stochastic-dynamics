@@ -1,30 +1,28 @@
-from typing import Final
-from datetime import datetime, timezone
-from knapsack_optimizer import KnapsackOptimizer
+def main():
+    """Main entry point for command line usage"""
+    parser = argparse.ArgumentParser(description='Solve knapsack problems')
+    parser.add_argument('--solver-type', type=str, default='knapsack',
+                       choices=['knapsack', 'unistochastic'],
+                       help='Type of solver to use (knapsack|unistochastic)')
+    parser.add_argument('--max-items', type=int, default=10,
+                       help='Maximum number of items for generated problems')
+    args = parser.parse_args()
 
+    # Example usage with configurable solver
+    values = [505, 352, 458, 220, 354, 414, 498, 545, 473, 543]
+    weights = [23, 26, 20, 18, 32, 27, 29, 26, 30, 27]
+    capacity = 67
 
-MAX_ITEMS:Final[int]=5
-MAX_ITEMS:Final[int]=10
-RUNS_PER_SIZE:Final[int]=3
+    if args.solver_type == "unistochastic":
+        solver = UnistochasticKnapsackSolver(values, weights, capacity)
+    else:
+        solver = KnapsackOptimizer(values, weights, capacity)
+        
+    solution = solver.solve()
+    solver.summary()
 
 if __name__ == "__main__":
-    # Run scaling comparison simulation
-    dummy_values = [1]  # Values will be generated in the simulation
-    dummy_weights = [1] # Weights will be generated in the simulation
-    
-    solver = KnapsackOptimizer(dummy_values, dummy_weights, capacity=1, hbar=0.5)
-    results = solver.compare_solvers_scaling(min_items=MIN_ITEMS, max_items=MAX_ITEMS, runs_per_size=RUNS_PER_SIZE)
-    
-    # Print results dataframe
-    print("\nSolver Scaling Results DataFrame:")
-    print(results.to_string(index=False, formatters={
-        'agreement_rate': '{:.0%}'.format,
-        'avg_time': '{:.2f}s'.format,
-        'max_time': '{:.2f}s'.format,
-        'avg_percent_diff': '{:.1f}%'.format
-    }))
-
-    t=datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
-    print(f'Completed at {t}')
-
-    results.to_csv(f'results/{t}.csv')
+    import argparse
+    from knapsack_optimizer import KnapsackOptimizer
+    from unistochastic_knapsack_solver import UnistochasticKnapsackSolver
+    main()
