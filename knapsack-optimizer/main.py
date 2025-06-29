@@ -1,25 +1,29 @@
 def main():
     """Main entry point for command line usage"""
-    parser = argparse.ArgumentParser(description='Solve knapsack problems')
-    parser.add_argument('--solver-type', type=str, default='knapsack',
-                       choices=['knapsack', 'unistochastic'],
-                       help='Type of solver to use (knapsack|unistochastic)')
-    parser.add_argument('--max-items', type=int, default=10,
-                       help='Maximum number of items for generated problems')
+    parser = argparse.ArgumentParser(description='Compare knapsack solvers')
+    parser.add_argument('--max-items', type=int, default=20,
+                       help='Maximum number of items for comparison')
+    parser.add_argument('--runs', type=int, default=10,
+                       help='Number of runs per item count')
     args = parser.parse_args()
 
-    # Example usage with configurable solver
-    values = [505, 352, 458, 220, 354, 414, 498, 545, 473, 543]
-    weights = [23, 26, 20, 18, 32, 27, 29, 26, 30, 27]
-    capacity = 67
+    # Run comparative analysis
+    ko = KnapsackOptimizer([1], [1], 1)  # Dummy instance for method access
+    results = ko.compare_solvers_scaling(max_items=args.max_items, runs_per_size=args.runs)
 
-    if args.solver_type == "unistochastic":
-        solver = UnistochasticKnapsackSolver(values, weights, capacity)
-    else:
-        solver = KnapsackOptimizer(values, weights, capacity)
-        
-    solution = solver.solve()
-    solver.summary()
+    # Print formatted results
+    print("\nSolver Comparison Results:")
+    print(f"{'Items':<6} {'PI Value':<9} {'Greedy':<9} {'DP':<9} {'Uni':<9} {'PI Time':<8} {'Greedy Time':<11} {'DP Time':<8} {'Uni Time':<8}")
+    for _, row in results.iterrows():
+        print(f"{row['items']:<6} "
+              f"{row['avg_pi_value']:>8.1f} "
+              f"{row['avg_greedy_value']:>8.1f} "
+              f"{row['avg_dp_value']:>8.1f} "
+              f"{row['avg_uni_value']:>8.1f} "
+              f"{row['pi_time']:>7.2f}s "
+              f"{row['greedy_time']:>10.2f}s "
+              f"{row['dp_time']:>7.2f}s "
+              f"{row['uni_time']:>7.2f}s")
 
 if __name__ == "__main__":
     import argparse

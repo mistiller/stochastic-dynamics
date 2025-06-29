@@ -60,8 +60,10 @@ if __name__ == "__main__":
     parser.add_argument('--solver-type', type=str, default='knapsack',
                        choices=['knapsack', 'unistochastic'],
                        help='Type of solver to benchmark (knapsack|unistochastic)')
-    parser.add_argument('--max-items', type=int, default=50,
+    parser.add_argument('--max-items', type=int, default=15,
                        help='Maximum number of items to test')
+    parser.add_argument('--runs-per-size', type=int, default=3,
+                       help='Number of runs per item count')
     args = parser.parse_args()
 
     benchmark_df = run_scaling_benchmark(

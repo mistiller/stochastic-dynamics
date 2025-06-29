@@ -249,6 +249,19 @@ class KnapsackOptimizer:
 
         return selected, total_value, total_weight
     
+    def unistochastic_solver(self) -> Tuple[List[int], float, float]:
+        """Solve using the quantum-inspired unistochastic approach"""
+        try:
+            solver = UnistochasticKnapsackSolver(self.values, self.weights, self.capacity)
+            solution = solver.solve(samples=1000)
+            selected = np.where(solution)[0].tolist()
+            total_value = self.values[selected].sum()
+            total_weight = self.weights[selected].sum()
+            return selected, total_value, total_weight
+        except Exception as e:
+            logger.error(f"Unistochastic solver failed: {str(e)}")
+            return [], 0.0, 0.0
+
     def fptas_solver(self, epsilon: float = 0.1) -> Tuple[List[int], float, float]:
         """Solve knapsack using FPTAS approximation scheme.
         
@@ -365,7 +378,11 @@ class KnapsackOptimizer:
             valid_values = []
             greedy_values = []
             dp_values = []
+            uni_values = []
             percent_diff_values = []
+            greedy_times = []
+            dp_times = []
+            uni_times = []
             
             for _ in range(runs_per_size):
                 # Generate random knapsack instance
@@ -389,13 +406,27 @@ class KnapsackOptimizer:
                 pi_value = np.nan
                 
                 try:
-                    # Get path integral solution
+                    # Time and run all solvers
                     start_time = time.time()
                     pi_sol = ko.solve(draws=1000, tune=500)
                     pi_value = values[pi_sol].sum()
                     pi_time = time.time() - start_time
                     run_times.append(pi_time)
                     pi_success = True
+
+                    # Time other solvers
+                    greedy_start = time.time()
+                    _, greedy_value, _ = ko.greedy_solver()
+                    greedy_times.append(time.time() - greedy_start)
+                    
+                    dp_start = time.time()
+                    _, dp_value, _ = ko.dynamic_programming_solver()
+                    dp_times.append(time.time() - dp_start)
+                    
+                    uni_start = time.time()
+                    _, uni_value, _ = ko.unistochastic_solver()
+                    uni_times.append(time.time() - uni_start)
+                    uni_values.append(uni_value)
                     
                     # Collect valid solution total values
                     valid_vals = ko.all_values[ko.valid_mask]
@@ -437,18 +468,19 @@ class KnapsackOptimizer:
             avg_percent_diff = np.nanmean(percent_diff_values) if percent_diff_values else np.nan
             error_count = runs_per_size - len(run_times)
             results[n_items] = {
-                'optimizer': 'Path Integral',
                 'items': n_items,
-                'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
-                'avg_value': np.nanmean(valid_values) if valid_values else np.nan,
-                'avg_greedy_value': np.nanmean(greedy_values) if greedy_values else np.nan,
-                'avg_dp_value': np.nanmean(dp_values) if dp_values else np.nan,
-                'avg_time': np.mean(run_times) if run_times else np.nan,
-                'max_time': np.max(run_times) if run_times else np.nan,
-                'errors': error_count,
+                'avg_pi_value': np.nanmean(valid_values) if valid_values else np.nan,
+                'avg_greedy_value': np.nanmean(greedy_values),
+                'avg_dp_value': np.nanmean(dp_values),
+                'avg_uni_value': np.nanmean(uni_values),
+                'pi_time': np.mean(run_times) if run_times else np.nan,
+                'greedy_time': np.mean(greedy_times),
+                'dp_time': np.mean(dp_times),
+                'uni_time': np.mean(uni_times),
+                'pi_errors': error_count,
                 'runs': runs_per_size,
-                'valid_solutions': len(valid_values),
-                'avg_percent_diff': avg_percent_diff
+                'agreement_rate': agreements / runs_per_size if runs_per_size > 0 else 0,
+                'valid_solutions': len(valid_values)
             }
         
             # Stop early if we're taking too long
