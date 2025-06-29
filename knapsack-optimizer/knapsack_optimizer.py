@@ -89,10 +89,10 @@ class KnapsackOptimizer:
             # 2. Add GP-based temporal correlation
             # As described in research paper section 4.2
             if n_items > 1:
-                # Define GP hyperparameters with unique names
-                gp_ell = pm.Gamma("gp_ell_build_model", alpha=2.0, beta=1.0)
-                gp_eta = pm.HalfNormal("gp_eta_build_model", sigma=1.0)
-                gp_mean = pm.Normal("gp_mean_build_model", mu=1.0, sigma=0.5)
+                # Define GP hyperparameters with globally unique names
+                gp_ell = pm.Gamma("gp_ell_build_model_unique", alpha=2.0, beta=1.0)
+                gp_eta = pm.HalfNormal("gp_eta_build_model_unique", sigma=1.0)
+                gp_mean = pm.Normal("gp_mean_build_model_unique", mu=1.0, sigma=0.5)
                 
                 # Construct GP covariance matrix
                 cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
@@ -118,10 +118,10 @@ class KnapsackOptimizer:
             # As described in research paper section 5.3
             # This creates a more faithful path integral formulation
             if len(self.values) > 1:
-                # Use GP to model temporal correlations
-                gp_mean = pm.Normal("gp_mean", mu=1.0, sigma=0.5)
-                gp_ell = pm.Gamma("gp_ell", alpha=2.0, beta=1.0)
-                gp_eta = pm.HalfNormal("gp_eta", sigma=1.0)
+                # Use GP to model temporal correlations with unique names
+                gp_mean = pm.Normal("gp_mean_rotated_unique", mu=1.0, sigma=0.5)
+                gp_ell = pm.Gamma("gp_ell_rotated_unique", alpha=2.0, beta=1.0)
+                gp_eta = pm.HalfNormal("gp_eta_rotated_unique", sigma=1.0)
                 
                 # Create a GP covariance matrix
                 t = np.arange(len(self.values))[:, None]
@@ -129,7 +129,7 @@ class KnapsackOptimizer:
                 
                 # Add GP-based prior to the inclusion probabilities
                 gp = pm.gp.Latent(cov_func=cov)
-                gp_prior = gp.prior("gp_prior", X=t)
+                gp_prior = gp.prior("gp_prior_rotated_unique", X=t)
                 
                 # Combine GP prior with action functional
                 log_prob = -action / self.hbar + gp_prior
@@ -506,17 +506,17 @@ class KnapsackOptimizer:
             if n_items > 1:
                 t = np.arange(n_items)[:, None]
                 with pm.Model():
-                    # Define GP parameters with unique names for this context
-                    gp_ell = pm.Gamma("gp_ell_initial_probs", alpha=2.0, beta=1.0)
-                    gp_eta = pm.HalfNormal("gp_eta_initial_probs", sigma=1.0)
-                    gp_mean = pm.Normal("gp_mean_initial_probs", mu=1.0, sigma=0.5)
+                    # Define GP parameters with globally unique names
+                    gp_ell = pm.Gamma("gp_ell_initial_probs_unique", alpha=2.0, beta=1.0)
+                    gp_eta = pm.HalfNormal("gp_eta_initial_probs_unique", sigma=1.0)
+                    gp_mean = pm.Normal("gp_mean_initial_probs_unique", mu=1.0, sigma=0.5)
                     
                     # Build GP covariance matrix
                     cov = (gp_eta**2) * pm.gp.cov.ExpQuad(1, gp_ell)
                     
                     # Apply GP to prior initialization
                     gp = pm.gp.Latent(cov_func=cov)
-                    gp_prior = gp.prior("gp_prior", X=t)
+                    gp_prior = gp.prior("gp_prior_initial_probs_unique", X=t)
                     init_probs = pm.math.sigmoid(gp_prior + init_probs)
                     
                     # Return GP-adjusted probabilities
