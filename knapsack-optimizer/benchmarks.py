@@ -34,12 +34,13 @@ def run_scaling_benchmark(max_items: int = 50, runs_per_size: int = 10,
             solver.solve()
             solve_time = time.time() - start_time
             # Handle different solver types
+            is_unistochastic = isinstance(solver, UnistochasticKnapsackSolver)
             results.append({
                 'items': n_items,
                 'solver_type': solver_type,
                 'time': solve_time,
-                'valid_solutions': solver.best_solution.sum() if solver_type == "unistochastic" else solver.valid_mask.sum(),
-                'agreement_rate': 1.0 if solver_type == "unistochastic" else solver.compare_solvers_scaling(runs_per_size=1)['agreement_rate'].iloc[0]
+                'valid_solutions': solver.best_solution.sum() if is_unistochastic else solver.valid_mask.sum(),
+                'agreement_rate': 1.0 if is_unistochastic else solver.compare_solvers_scaling(runs_per_size=1)['agreement_rate'].iloc[0]
             })
         except Exception as e:
             logger.error(f"Failed benchmark for {n_items} items: {str(e)}")
