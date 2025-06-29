@@ -151,10 +151,13 @@ class KnapsackOptimizer:
             # Use Hamiltonian Monte Carlo with NUTS for better convergence
             # As described in research paper section 7.2
             self.trace = pm.sample(
-                draws=draws,
-                tune=tune,
+                draws=2000,
+                tune=2000,
                 chains=chains,
-                target_accept=0.95,  # Match paper's high precision sampling
+                target_accept=0.99,  # Increased from 0.95 for better convergence
+                max_treedepth=15,     # Increased from default 10
+                compute_convergence_checks=True,
+                nuts_kwargs={'max_treedepth': 15},
                 return_inferencedata=True
             )
         
