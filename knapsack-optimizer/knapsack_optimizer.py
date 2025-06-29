@@ -11,6 +11,7 @@ import pymc as pm
 import pymc.smc as smc
 import arviz as az
 import matplotlib.pyplot as plt
+from unistochastic_knapsack_solver import UnistochasticKnapsackSolver
 from typing import List, Dict, Tuple, Optional, Union
 from loguru import logger
 from functools import lru_cache
@@ -362,6 +363,7 @@ class KnapsackOptimizer:
                 print("\nFPTAS not applicable:", str(e))
         
     def compare_solvers_scaling(self, min_items:int = 5, max_items: int = 10, runs_per_size: int = 10):
+        results = {}  # Initialize results dictionary
         """Run comparative analysis of solvers with increasing problem size.
         
         Args:
@@ -484,12 +486,12 @@ class KnapsackOptimizer:
             }
         
             # Stop early if we're taking too long
-            if results[n_items]['avg_time'] and results[n_items]['avg_time'] > 60:
+            if results[n_items]['pi_time'] and results[n_items]['pi_time'] > 60:
                 logger.info(f"Stopping early at {n_items} items due to long runtime")
                 break
                 
         # Convert results to DataFrame
-        df = pd.DataFrame(results.values()).sort_values('items')
+        df = pd.DataFrame(list(results.values())).sort_values('items')
         df = df[[
             'optimizer', 'items', 'agreement_rate',
             'avg_value', 'avg_greedy_value', 'avg_dp_value',
